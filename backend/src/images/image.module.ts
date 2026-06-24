@@ -1,0 +1,26 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Page } from '../pages/page.entity';
+import { Site } from '../sites/site.entity';
+import { BrandCard } from '../sites/brand-card.entity';
+import { SiteImage } from './site-image.entity';
+import { ImagePlacement } from './image-placement.entity';
+import { ImageService } from './image.service';
+import { ImageAiService } from './image-ai.service';
+import { ImageSyncService } from './image-sync.service';
+import { WpMediaService } from './wp-media.service';
+import { ImageController, ImageSiteController } from './image.controller';
+import { SettingsModule } from '../settings/settings.module';
+import { TokenUsageModule } from '../token-usage/token-usage.module';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([Page, Site, BrandCard, SiteImage, ImagePlacement]),
+    SettingsModule,
+    TokenUsageModule,
+  ],
+  controllers: [ImageSiteController, ImageController],
+  providers: [ImageService, ImageAiService, ImageSyncService, WpMediaService],
+  exports: [ImageService],
+})
+export class ImageModule {}

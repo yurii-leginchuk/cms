@@ -1,0 +1,33 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build output (image builds it fresh)
+dist
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+gsc-credentials.json
+*.pem
+*-credentials.json
+
+# Git / IDE / OS
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+
+# Logs
+*.log
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Testing
+coverage
+eval

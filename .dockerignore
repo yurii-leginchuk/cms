@@ -1,0 +1,46 @@
+# Dependencies
+**/node_modules
+**/.pnp
+**/.pnp.js
+
+# Build outputs
+**/dist
+**/build
+**/.next
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+**/gsc-credentials.json
+*.pem
+*-credentials.json
+
+# Git / CI
+.git
+.gitignore
+.github
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Logs
+**/*.log
+
+# Tooling / docs / assets not needed in image
+.claude
+.mcp.json
+.playwright-mcp
+*.md
+*.png
+
+# Docker
+docker-compose*.yml
+**/Dockerfile*
+.dockerignore
+
+# Testing
+**/coverage

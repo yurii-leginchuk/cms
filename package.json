@@ -1,0 +1,26 @@
+{
+  "name": "cms",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "docker compose up --build",
+    "dev:d": "docker compose up --build -d",
+    "stop": "docker compose stop",
+    "down": "docker compose down",
+    "down:v": "docker compose down -v",
+    "restart": "docker compose restart",
+    "restart:backend": "docker compose restart backend",
+    "restart:frontend": "docker compose restart frontend",
+    "logs": "docker compose logs -f",
+    "logs:backend": "docker compose logs -f backend",
+    "logs:frontend": "docker compose logs -f frontend",
+    "logs:db": "docker compose logs -f postgres",
+    "ps": "docker compose ps",
+    "build": "docker compose build",
+    "build:backend": "docker compose build backend",
+    "build:frontend": "docker compose build frontend",
+    "exec:backend": "docker compose exec backend",
+    "exec:frontend": "docker compose exec frontend",
+    "db:shell": "docker compose exec postgres psql -U cms_user -d cms_db"
+  }
+}

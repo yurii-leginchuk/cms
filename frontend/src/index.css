@@ -1,0 +1,89 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  .theme {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif
+  }
+
+  /* Dark theme - Google Analytics inspired. Always dark. */
+  :root {
+    --background: #0f1117;
+    --foreground: #e8eaed;
+
+    --card: #1a1d27;
+    --card-foreground: #e8eaed;
+
+    --popover: #1e2132;
+    --popover-foreground: #e8eaed;
+
+    --primary: #4e8af4;
+    --primary-foreground: #ffffff;
+
+    --secondary: #232635;
+    --secondary-foreground: #e8eaed;
+
+    --muted: #1e2132;
+    --muted-foreground: #9aa0a6;
+
+    --accent: #2a3150;
+    --accent-foreground: #e8eaed;
+
+    --destructive: oklch(0.65 0.22 25);
+    --destructive-foreground: #ffffff;
+
+    --border: rgba(255, 255, 255, 0.08);
+    --input: rgba(255, 255, 255, 0.06);
+    --ring: #4e8af4;
+
+    --radius: 0.5rem;
+
+    --sidebar: #141720;
+    --sidebar-foreground: #e8eaed;
+    --sidebar-primary: #4e8af4;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #232635;
+    --sidebar-accent-foreground: #e8eaed;
+    --sidebar-border: rgba(255, 255, 255, 0.06);
+    --sidebar-ring: #4e8af4;
+  }
+
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Geist Variable', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Indeterminate progress bar */
+  @keyframes shimmer {
+    0%   { transform: translateX(-200%); }
+    100% { transform: translateX(400%); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}

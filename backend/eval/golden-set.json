@@ -1,0 +1,58 @@
+{
+  "description": "Behavioral golden set for the SEO agent. Each case sends a message and asserts which tools the agent picks and what the output looks like. Run with `npm run eval` against a running stack with a configured site. Catches prompt/routing regressions that unit tests can't.",
+  "cases": [
+    {
+      "id": "page-count",
+      "message": "How many pages does my site have?",
+      "expectAnyTools": ["getSiteStats", "getSiteInfo"],
+      "forbidProposal": true
+    },
+    {
+      "id": "quick-wins",
+      "message": "Where are my biggest SEO opportunities right now? Show me quick wins.",
+      "expectTools": ["findStrikingDistanceKeywords"]
+    },
+    {
+      "id": "orphans",
+      "message": "Do I have any orphan pages? Analyze my internal linking.",
+      "expectTools": ["analyzeInternalLinks"]
+    },
+    {
+      "id": "cannibalization",
+      "message": "Which of my pages compete for the same keywords?",
+      "expectTools": ["findKeywordCannibalization"]
+    },
+    {
+      "id": "gsc-traffic",
+      "message": "What were my top search queries in the last 28 days?",
+      "expectAnyTools": ["querySearchConsole"]
+    },
+    {
+      "id": "pagespeed",
+      "message": "Which of my pages are slow?",
+      "expectAnyTools": ["getPoorAndNiPages", "getPageSpeedSummary", "analyzePoorPages"]
+    },
+    {
+      "id": "optimize-with-schema",
+      "message": "Optimize {PAGE_URL} — full rewrite with JSON-LD schema, then call proposePageContent.",
+      "requiresPageUrl": true,
+      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
+      "expectProposalSchemaValid": true
+    },
+    {
+      "id": "structured-recommendations",
+      "message": "Optimize {PAGE_URL} — full rewrite, and give me prioritized recommendations.",
+      "requiresPageUrl": true,
+      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
+      "expectStructuredRecommendations": true
+    },
+    {
+      "id": "optimize-no-fabricated-services",
+      "message": "Optimize {PAGE_URL} — full rewrite with JSON-LD, then call proposePageContent. Only use services the site actually offers.",
+      "requiresPageUrl": true,
+      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
+      "assertFaithful": true,
+      "forbidUnsupportedOfferings": true
+    }
+  ]
+}
