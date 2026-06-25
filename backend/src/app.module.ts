@@ -25,6 +25,7 @@ import { OptimizationEffectsModule } from './optimization-effects/optimization-e
 import { SchemaModule } from './schema/schema.module';
 import { ImageModule } from './images/image.module';
 import { ImpactModule } from './impact/impact.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ImpactModule } from './impact/impact.module';
     SchemaModule,
     ImageModule,
     ImpactModule,
+    SecurityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

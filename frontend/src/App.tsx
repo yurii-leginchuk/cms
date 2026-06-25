@@ -18,6 +18,8 @@ import BriefDetailPage from '@/pages/BriefDetailPage'
 import ImpactPage from '@/pages/ImpactPage'
 import ImpactPagesPage from '@/pages/ImpactPagesPage'
 import ImpactKeywordsPage from '@/pages/ImpactKeywordsPage'
+import SiteSecurityPage from '@/pages/SiteSecurityPage'
+import SecurityIncidentPage from '@/pages/SecurityIncidentPage'
 import UsagePage from '@/pages/UsagePage'
 
 export default function App() {
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="sites/:id/impact" element={<ImpactPage />} />
           <Route path="sites/:id/impact/pages" element={<ImpactPagesPage />} />
           <Route path="sites/:id/impact/keywords" element={<ImpactKeywordsPage />} />
+          <Route path="sites/:id/security" element={<SiteSecurityPage />} />
+          <Route path="sites/:id/security/:incidentId" element={<SecurityIncidentPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="settings/prompts" element={<PromptsPage />} />
           <Route path="settings/usage" element={<UsagePage />} />
