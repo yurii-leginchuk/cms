@@ -18,7 +18,6 @@ export interface SiteImageRow {
   observedQuality: AltQuality
   status: ImageAltStatus
   source: ImageAltSource
-  decorative: boolean
   needsReview: boolean
   aiRationale: string | null
   evidence: string[]
@@ -122,14 +121,8 @@ export async function setImageAlt(
   siteId: string,
   imageId: string,
   alt: string,
-  decorative?: boolean,
 ): Promise<SiteImageRow> {
-  const { data } = await apiClient.put(`${base(siteId)}/${imageId}/alt`, { alt, decorative })
-  return data.data
-}
-
-export async function markDecorative(siteId: string, imageId: string, decorative: boolean) {
-  const { data } = await apiClient.post(`${base(siteId)}/${imageId}/decorative`, { decorative })
+  const { data } = await apiClient.put(`${base(siteId)}/${imageId}/alt`, { alt })
   return data.data
 }
 

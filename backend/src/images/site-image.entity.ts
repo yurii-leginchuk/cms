@@ -91,10 +91,6 @@ export class SiteImage {
   })
   source: ImageAltSource;
 
-  /** User-flagged decorative → alt="" is the correct, intended outcome. */
-  @Column({ type: 'boolean', default: false })
-  decorative: boolean;
-
   // ── AI grounding (mirrors PageSchema) ─────────────────────────────────────
 
   @Column({ type: 'text', nullable: true })

@@ -41,3 +41,6 @@ coverage/
 
 # MCP / local tooling
 .playwright-mcp/
+
+# Local test WordPress site (large Duplicator snapshot — not for VCS)
+/test_website/

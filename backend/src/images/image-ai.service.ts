@@ -49,7 +49,6 @@ function placementContext(placements: ImagePlacement[]): { text: string; quotes:
 
 interface AltGen {
   alt: string;
-  decorative: boolean;
   rationale: string;
 }
 
@@ -136,8 +135,7 @@ export class ImageAiService {
     );
     const faith = checkFaithfulness(gen.alt, grounding);
 
-    image.draftAlt = gen.decorative ? '' : gen.alt;
-    image.decorative = gen.decorative;
+    image.draftAlt = gen.alt;
     image.aiRationale = gen.rationale;
     // Evidence = the page context quotes; if the alt was described straight from
     // the image (no page found), record that as the provenance instead.
@@ -165,9 +163,7 @@ export class ImageAiService {
     const candidates = await this.imageRepo.find({
       where: { siteId, status: In([ImageAltStatus.SYNCED]) },
     });
-    const missing = candidates.filter(
-      (i) => needsAlt(i.observedQuality) && !i.decorative,
-    );
+    const missing = candidates.filter((i) => needsAlt(i.observedQuality));
 
     let generated = 0;
     let failed = 0;
@@ -235,7 +231,6 @@ export class ImageAiService {
       if (alt.length > MAX_ALT_CHARS) alt = alt.slice(0, MAX_ALT_CHARS).trim();
       return {
         alt,
-        decorative: parsed.decorative === true,
         rationale: String(parsed.rationale ?? '').slice(0, 500),
       };
     } catch (err) {
@@ -303,7 +298,6 @@ export class ImageAiService {
       if (alt.length > MAX_ALT_CHARS) alt = alt.slice(0, MAX_ALT_CHARS).trim();
       return {
         alt,
-        decorative: parsed.decorative === true,
         rationale: String(parsed.rationale ?? '').slice(0, 500),
       };
     } catch (err) {
@@ -329,14 +323,12 @@ export class ImageAiService {
       '  prices, locations, or claims you cannot see in the image.',
       '- Keep it concise: 5–15 words, hard max 125 characters.',
       '- Do NOT start with "image of", "picture of", "photo of", "graphic of".',
-      '- You CAN see the image — describe what is actually in it. Only set',
-      '  decorative=true if the image is genuinely empty/non-informative: a blank or',
-      '  solid-color block, a thin divider line, or a pure spacer. ANY real content',
-      '  (photo, illustration, logo, icon with meaning, diagram, UI/graphic) is NOT',
-      '  decorative — describe it instead.',
+      '- ALWAYS write a real description — every image must have alt text. Describe',
+      '  what is in it (photo, illustration, logo, icon, diagram, UI/graphic). Never',
+      '  return an empty alt.',
       '- If text is legibly shown in the image, you may include it verbatim.',
       '',
-      'Respond as JSON: {"alt": string, "decorative": boolean, "rationale": string}.',
+      'Respond as JSON: {"alt": string, "rationale": string}.',
       'rationale = one sentence on what you saw in the image.',
     ]
       .filter((l) => l !== '')
@@ -359,18 +351,13 @@ export class ImageAiService {
       '- Keep it concise: 5–15 words, hard max 125 characters.',
       '- Do NOT start with "image of", "picture of", "photo of", "graphic of".',
       '- Do NOT keyword-stuff. Describe the image, not the page\'s target keyword.',
-      '- Missing or thin surrounding text is NOT evidence that an image is decorative.',
-      '  NEVER mark an image decorative just because context is sparse. Only set',
-      '  decorative=true when the image is POSITIVELY non-informative: a spacer,',
-      '  a horizontal divider rule, a solid/blank background, or a tiny icon that sits',
-      '  right next to a text label that already conveys the meaning.',
-      '- A photo, illustration, logo, diagram, product shot, or any content graphic',
-      '  (e.g. a file named like a design export) is NOT decorative — describe it.',
+      '- ALWAYS write a real description — every image must have alt text. Never',
+      '  return an empty alt, no matter how sparse the surrounding context is.',
       '- If you cannot tell exactly what the image shows from the context, write a',
       '  cautious, generic-but-truthful description (e.g. based on the file name and',
-      '  page topic) and DO NOT fabricate specifics. Do NOT fall back to decorative.',
+      '  page topic) and DO NOT fabricate specifics.',
       '',
-      'Respond as JSON: {"alt": string, "decorative": boolean, "rationale": string}.',
+      'Respond as JSON: {"alt": string, "rationale": string}.',
       'rationale = one sentence on what context you grounded the alt in.',
     ]
       .filter((l) => l !== '')

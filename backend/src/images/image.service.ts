@@ -19,7 +19,6 @@ export interface SiteImageRow {
   observedQuality: string;
   status: ImageAltStatus;
   source: string;
-  decorative: boolean;
   needsReview: boolean;
   aiRationale: string | null;
   evidence: string[];
@@ -204,13 +203,10 @@ export class ImageService {
       .where('img.siteId = :siteId', { siteId });
 
     if (opts.missingOnly) {
-      // Work queue: needs alt (incl. empty alt="" — a decision is required) and
-      // not deliberately decorative or already cleared.
+      // Work queue: every image without a meaningful alt (incl. empty alt="").
       qb.andWhere('img.observedQuality IN (:...q)', {
         q: ['absent', 'empty', 'junkFilename', 'placeholder'],
-      })
-        .andWhere('img.decorative = false')
-        .andWhere('img.status != :removed', { removed: ImageAltStatus.REMOVED });
+      }).andWhere('img.status != :removed', { removed: ImageAltStatus.REMOVED });
     }
     if (opts.search) {
       qb.andWhere('img.canonicalUrl ILIKE :s', { s: `%${opts.search}%` });
@@ -248,7 +244,6 @@ export class ImageService {
       observedQuality: r.observedQuality,
       status: r.status,
       source: r.source,
-      decorative: r.decorative,
       needsReview: r.needsReview,
       aiRationale: r.aiRationale,
       evidence: r.evidence,
@@ -268,15 +263,12 @@ export class ImageService {
   async coverage(siteId: string): Promise<ImageCoverage> {
     const images = await this.imageRepo.find({
       where: { siteId },
-      select: ['id', 'observedQuality', 'status', 'decorative'],
+      select: ['id', 'observedQuality', 'status'],
     });
-    // "Missing" = needs alt work and not deliberately decorative. An observed
-    // empty alt is a work item (a decision is required), NOT auto-covered.
+    // "Missing" = every image without a meaningful alt. An observed empty alt
+    // (alt="") is a work item — every image must have a real description.
     const imagesMissing = images.filter(
-      (i) =>
-        needsAlt(i.observedQuality) &&
-        !i.decorative &&
-        i.status !== ImageAltStatus.REMOVED,
+      (i) => needsAlt(i.observedQuality) && i.status !== ImageAltStatus.REMOVED,
     ).length;
 
     // Per-placement coverage inherits each placement's image alt state (the WP
@@ -286,9 +278,7 @@ export class ImageService {
       .createQueryBuilder('p')
       .innerJoin(SiteImage, 'img', 'img.id = p.imageId')
       .where('p.siteId = :siteId', { siteId })
-      .andWhere('(img.observedQuality = :meaningful OR img.decorative = true)', {
-        meaningful: 'meaningful',
-      })
+      .andWhere('img.observedQuality = :meaningful', { meaningful: 'meaningful' })
       .getCount();
 
     const pendingChanges = images.filter(
@@ -330,30 +320,17 @@ export class ImageService {
 
   /**
    * Human edit / approve of an alt. This is the review gesture that promotes an
-   * `ai_suggested` row to `modified` (appliable). Setting a non-empty alt clears
-   * `decorative`; an explicit empty string with decorative=true is allowed.
+   * `ai_suggested` row to `modified` (appliable). Every image must carry a real
+   * description, so the alt is stored verbatim.
    */
   async setAlt(
     imageId: string,
     alt: string,
-    opts: { decorative?: boolean; bySource?: ImageAltSource } = {},
+    opts: { bySource?: ImageAltSource } = {},
   ): Promise<SiteImage> {
     const img = await this.getOrThrow(imageId);
-    const trimmed = alt ?? '';
-    img.draftAlt = trimmed;
-    img.decorative = opts.decorative ?? (trimmed.trim() === '' ? img.decorative : false);
+    img.draftAlt = alt ?? '';
     img.source = opts.bySource ?? ImageAltSource.HUMAN;
-    img.status = ImageAltStatus.MODIFIED;
-    img.needsReview = false;
-    return this.imageRepo.save(img);
-  }
-
-  /** Mark an image decorative → its applied alt becomes "" (valid a11y outcome). */
-  async markDecorative(imageId: string, decorative: boolean): Promise<SiteImage> {
-    const img = await this.getOrThrow(imageId);
-    img.decorative = decorative;
-    img.draftAlt = decorative ? '' : img.draftAlt;
-    img.source = ImageAltSource.HUMAN;
     img.status = ImageAltStatus.MODIFIED;
     img.needsReview = false;
     return this.imageRepo.save(img);
@@ -374,7 +351,6 @@ export class ImageService {
   async revert(imageId: string): Promise<SiteImage> {
     const img = await this.getOrThrow(imageId);
     img.draftAlt = null;
-    img.decorative = false;
     img.needsReview = false;
     img.aiRationale = null;
     img.evidence = [];

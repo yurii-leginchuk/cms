@@ -155,6 +155,46 @@ export class ImageSyncService {
     this.logger.log(`Applied alt to ${image.canonicalUrl}`);
   }
 
+  /**
+   * Autopilot apply: push every AI suggestion the generator was CONFIDENT about
+   * (`needsReview === false`) straight to WordPress with NO human review. Risky
+   * suggestions (`needsReview` — a forbidden Brand-Card term, over-length, or
+   * thin context with no vision description) are deliberately left as
+   * `ai_suggested` for a human. This is the unattended path the nightly autopilot
+   * uses so NEW images get alt the same night without confirmation.
+   */
+  async autoApplyConfident(
+    siteId: string,
+  ): Promise<{ applied: number; failed: number; heldForReview: number }> {
+    const site = await this.requireKey(siteId);
+
+    const confident = await this.imageRepo.find({
+      where: { siteId, status: ImageAltStatus.AI_SUGGESTED, needsReview: false },
+    });
+    const heldForReview = await this.imageRepo.count({
+      where: { siteId, status: ImageAltStatus.AI_SUGGESTED, needsReview: true },
+    });
+
+    let applied = 0;
+    let failed = 0;
+    for (const img of confident) {
+      // Promote to `modified` so pushOne's success path flips it to `synced`
+      // exactly as a reviewed apply would.
+      img.status = ImageAltStatus.MODIFIED;
+      await this.imageRepo.update({ id: img.id }, { status: ImageAltStatus.MODIFIED });
+      try {
+        await this.pushOne(site, img);
+        applied++;
+      } catch (err) {
+        failed++;
+        this.logger.warn(
+          `Autopilot apply failed for ${img.canonicalUrl}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { applied, failed, heldForReview };
+  }
+
   /** Preview of every pending image change (for the Apply-All dialog). */
   async pendingSummary(siteId: string): Promise<PendingSummary> {
     const rows = await this.imageRepo.find({
