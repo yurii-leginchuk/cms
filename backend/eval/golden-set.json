@@ -33,26 +33,10 @@
       "expectAnyTools": ["getPoorAndNiPages", "getPageSpeedSummary", "analyzePoorPages"]
     },
     {
-      "id": "optimize-with-schema",
-      "message": "Optimize {PAGE_URL} — full rewrite with JSON-LD schema, then call proposePageContent.",
+      "id": "meta-rewrite",
+      "message": "Rewrite the meta title and description for {PAGE_URL}.",
       "requiresPageUrl": true,
-      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
-      "expectProposalSchemaValid": true
-    },
-    {
-      "id": "structured-recommendations",
-      "message": "Optimize {PAGE_URL} — full rewrite, and give me prioritized recommendations.",
-      "requiresPageUrl": true,
-      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
-      "expectStructuredRecommendations": true
-    },
-    {
-      "id": "optimize-no-fabricated-services",
-      "message": "Optimize {PAGE_URL} — full rewrite with JSON-LD, then call proposePageContent. Only use services the site actually offers.",
-      "requiresPageUrl": true,
-      "expectTools": ["getFullPageAnalysis", "proposePageContent"],
-      "assertFaithful": true,
-      "forbidUnsupportedOfferings": true
+      "expectTools": ["proposeMetaUpdate"]
     }
   ]
 }

@@ -2,7 +2,7 @@ import {
   Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index, Unique,
 } from 'typeorm';
 
-export type WatchedKeywordSource = 'manual' | 'brief' | 'semrush';
+export type WatchedKeywordSource = 'manual' | 'semrush';
 
 /**
  * A target query the user wants to monitor over time — the "are my keywords

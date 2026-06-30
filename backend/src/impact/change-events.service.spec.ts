@@ -21,19 +21,16 @@ describe('ChangeEventsService', () => {
     const schema = repo([
       { id: 's1', pageId: 'p2', count: 2, snapshot: [{ type: 'FAQPage' }, { type: 'Article' }], createdAt: at },
     ]);
-    const briefs = repo([
-      { id: 'b1', pageId: 'p1', pageUrl: 'https://x.com/a', name: 'Rewrite A', status: 'applied', appliedAt: '2026-05-12', proposedMetaTitle: 'Brief T', createdAt: at },
-    ]);
     const effects = repo([
       { id: 'e1', pageId: 'p1', appliedAt: at, status: 'measured' },
     ]);
-    return new ChangeEventsService(meta, pages, schema, briefs, effects);
+    return new ChangeEventsService(meta, pages, schema, effects);
   }
 
-  it('merges four sources into a typed feed', async () => {
+  it('merges meta, technical and schema sources into a typed feed', async () => {
     const events = await build().listEvents('site1');
     const types = events.map((e) => e.type).sort();
-    expect(types).toEqual(['brief', 'meta', 'schema', 'technical']);
+    expect(types).toEqual(['meta', 'schema', 'technical']);
   });
 
   it('collapses a title+description edit into one meta event and links its measured effect', async () => {
@@ -59,17 +56,10 @@ describe('ChangeEventsService', () => {
     expect(schema.summary).toContain('FAQPage');
   });
 
-  it('treats applied briefs as day-precision events', async () => {
-    const events = await build().listEvents('site1');
-    const brief = events.find((e) => e.type === 'brief')!;
-    expect(brief.precision).toBe('day');
-    expect(brief.day).toBe('2026-05-12');
-  });
-
   it('surfaces a meta marker from an optimization_effect that has no meta_history row', async () => {
     const pages = repo([{ id: 'p9', url: 'https://x.com/lonely' }])
     const svc = new ChangeEventsService(
-      repo([]), pages, repo([]), repo([]),
+      repo([]), pages, repo([]),
       repo([{ id: 'e9', pageId: 'p9', pageUrl: 'https://x.com/lonely', changeSummary: 'title', appliedAt: at, status: 'measured' }]),
     )
     const events = await svc.listEvents('site1')
@@ -86,9 +76,9 @@ describe('ChangeEventsService', () => {
 
   it('marks events on the same page within the window as confounded', async () => {
     const events = await build().listEvents('site1');
-    // p1 has meta + technical + brief all within ~2 days → each sees 2 others.
+    // p1 has meta + technical within ~2 days → each sees 1 other.
     const meta = events.find((e) => e.type === 'meta')!;
-    expect(meta.confoundedWith).toBe(2);
+    expect(meta.confoundedWith).toBe(1);
     // p2's lone schema event has no confounders.
     const schema = events.find((e) => e.type === 'schema')!;
     expect(schema.confoundedWith).toBe(0);

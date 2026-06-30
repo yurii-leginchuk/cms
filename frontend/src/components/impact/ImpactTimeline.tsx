@@ -23,10 +23,9 @@ export const TYPE_META: Record<ChangeEventType, { label: string; color: string }
   meta: { label: 'Meta', color: '#4e8af4' },
   technical: { label: 'Technical', color: '#a78bfa' },
   schema: { label: 'Schema', color: '#34d399' },
-  brief: { label: 'Brief', color: '#fbbf24' },
 }
 
-const LANE_ORDER: ChangeEventType[] = ['meta', 'technical', 'schema', 'brief']
+const LANE_ORDER: ChangeEventType[] = ['meta', 'technical', 'schema']
 const LANE_TOP_GAP = 12
 const LANE_ROW_H = 16
 

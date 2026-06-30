@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { streamText, generateText, stepCountIs } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { IncomingMessage, ServerResponse } from 'http';
@@ -17,12 +17,10 @@ import { SiteBrief } from '../sites/site-brief.entity';
 import { BrandCard } from '../sites/brand-card.entity';
 import { Page } from '../pages/page.entity';
 import { PageSpeedResult } from '../pagespeed/page-speed-result.entity';
-import { Brief } from '../briefs/brief.entity';
 import { SettingsService } from '../settings/settings.service';
 import { TokenUsageService } from '../token-usage/token-usage.service';
 import { EmbeddingService } from '../embedding/embedding.service';
 import { GscService } from '../gsc/gsc.service';
-import { PromptsService } from '../prompts/prompts.service';
 import { createSiteTools } from './tools/site-tools';
 import { createProposalTools } from './tools/proposal-tools';
 import { createSchemaTools } from './tools/schema-tools';
@@ -98,15 +96,10 @@ export class AgentService {
     private readonly brandCardRepo: Repository<BrandCard>,
     @InjectRepository(PageSpeedResult)
     private readonly psiRepo: Repository<PageSpeedResult>,
-    // NEW content-brief artifact (table `briefs`). Distinct from the per-site
-    // SiteBrief above (`briefRepo`). Do NOT conflate the two.
-    @InjectRepository(Brief)
-    private readonly contentBriefRepo: Repository<Brief>,
     private readonly settingsService: SettingsService,
     private readonly tokenUsageService: TokenUsageService,
     private readonly embeddingService: EmbeddingService,
     private readonly gscService: GscService,
-    private readonly promptsService: PromptsService,
     private readonly schemaService: SchemaService,
     private readonly schemaAiService: SchemaAiService,
     private readonly schemaSyncService: SchemaSyncService,
@@ -236,71 +229,7 @@ export class AgentService {
       this.briefRepo,
       this.brandCardRepo,
     );
-    // Grounding context for the faithfulness check: source page content + Brand Card
-    // offering allow-list + never-say list. Lets proposePageContent flag invented offerings.
-    const getGroundingContext = async ({
-      pageId,
-      pageUrl,
-    }: {
-      pageId: string | null;
-      pageUrl: string;
-    }) => {
-      let page: Page | null = null;
-      if (pageId) {
-        page = await this.pageRepo.findOne({ where: { id: pageId, siteId: session.siteId } });
-      }
-      if (!page && pageUrl) {
-        page = await this.pageRepo.findOne({ where: { url: pageUrl, siteId: session.siteId } });
-      }
-      const brandServices = brandCard
-        ? brandCard.services.flatMap((s) => [s.name, ...(s.subServices ?? [])])
-        : [];
-      return {
-        sourceContent: page?.cleanContent ?? '',
-        retrievedContent: [] as string[],
-        brandServices,
-        brandNeverSay: brandCard?.neverSay ?? [],
-      };
-    };
-    // Tier-2 faithfulness judge — optional, off by default (extra model call per
-    // proposal). Enable via the `agent_faithfulness_judge` setting.
-    const judgeEnabled = ['1', 'true', 'on', 'yes'].includes(
-      ((await this.settingsService.getRaw('agent_faithfulness_judge')) ?? '').toLowerCase(),
-    );
-    const runFaithfulnessJudge = judgeEnabled
-      ? async (proposedContent: string, ctx: { sourceContent: string; retrievedContent: string[]; brandServices: string[] }) => {
-          const evidence = [ctx.sourceContent, ...ctx.retrievedContent, ...ctx.brandServices]
-            .filter(Boolean)
-            .join('\n')
-            .slice(0, 12000);
-          const judgeModel = isClaudeModel
-            ? createAnthropic({ apiKey })(model)
-            : createOpenAI({ apiKey })(model);
-          const { text } = await generateText({
-            model: judgeModel,
-            temperature: 0,
-            prompt:
-              `You are a strict faithfulness checker. List every service, offering, sub-service, statistic, named person, certification, or factual claim in the DRAFT that is NOT supported by the EVIDENCE. ` +
-              `Improved wording is fine — only flag NEW facts/offerings the evidence does not contain. ` +
-              `Output ONLY a JSON array of short strings (the unsupported claims). If everything is supported, output [].\n\n` +
-              `EVIDENCE:\n${evidence}\n\nDRAFT:\n${proposedContent.slice(0, 12000)}`,
-          });
-          try {
-            const match = text.match(/\[[\s\S]*\]/);
-            const arr = JSON.parse(match ? match[0] : '[]');
-            return Array.isArray(arr) ? arr.map((x) => String(x)).slice(0, 20) : [];
-          } catch {
-            return [];
-          }
-        }
-      : undefined;
-
-    const proposalTools = createProposalTools(
-      this.contentBriefRepo,
-      session.siteId,
-      getGroundingContext,
-      runFaithfulnessJudge,
-    );
+    const proposalTools = createProposalTools();
     const schemaTools = createSchemaTools(
       this.schemaService,
       this.schemaAiService,
@@ -319,24 +248,13 @@ export class AgentService {
       { role: 'user' as const, content: userMessage },
     ];
 
-    // Intent routing — load and inject only the relevant workflow prompt (user-editable).
-    // General questions get no workflow block at all, saving tokens and keeping focus.
+    // Intent routing — detect content-workflow intent purely to tune the generation
+    // temperature (analytical Q&A stays deterministic; rewrite/optimize turns get a
+    // warmer temperature for natural meta copy).
     const workflowIntent = detectWorkflowIntent(userMessage);
-    let workflowBlock = '';
-    if (workflowIntent === 'optimize') {
-      const p = await this.promptsService
-        .findEffective('agent_optimize_page', session.siteId)
-        .catch(() => null);
-      if (p) workflowBlock = `\n--- ACTIVE WORKFLOW: OPTIMIZE EXISTING PAGE ---\n${p.content}\n--- END WORKFLOW ---`;
-    } else if (workflowIntent === 'new_page') {
-      const p = await this.promptsService
-        .findEffective('agent_new_page', session.siteId)
-        .catch(() => null);
-      if (p) workflowBlock = `\n--- ACTIVE WORKFLOW: CREATE NEW PAGE ---\n${p.content}\n--- END WORKFLOW ---`;
-    }
 
     // System prompt — split into a STABLE, cacheable prefix (role + rules + brief +
-    // brand card) and a VOLATILE suffix (per-intent workflow + conversation summary).
+    // brand card) and a VOLATILE suffix (page context + conversation summary).
     // Keeping the volatile parts at the END preserves the cached prefix across turns
     // and intents (Anthropic ephemeral cache / OpenAI automatic prefix cache). The
     // workflow block used to be PREPENDED, which busted the cache on every intent change.
@@ -356,9 +274,6 @@ Your role:
 - Suggest meta titles/descriptions, indexing strategy, content gaps
 - When proposing changes, ALWAYS use proposal tools (proposeMetaUpdate, proposeNoindexChange) — never just describe changes in text
 - ANY request to rewrite or change a meta title or meta description (in any language, e.g. "rewrite the meta", "перепиши title/description", "измени мета") MUST end the turn with a proposeMetaUpdate call. Inline before/after text alone is INCOMPLETE — the proposeMetaUpdate call is the canonical, saveable deliverable.
-- When optimizing or rewriting a page, you MUST end the turn by calling proposePageContent. The tool payload is the canonical, saveable deliverable — do NOT output the full rewrite as chat text in place of the tool call. Your inline message must be a brief summary only; if you wrote a full rewrite as prose and did not call proposePageContent, the turn is INCOMPLETE.
-- proposePageContent now AUTOMATICALLY saves the result as a brief — the user does NOT need to click save. Each call to proposePageContent creates a NEW saved brief, so if the user asks for multiple page rewrites or several variants, call it once per page/variant and each becomes its own brief.
-- When the user asks to edit, open, or continue working on a SPECIFIC existing brief, call openBriefForEditing(briefId) to open it in the brief editor.
 - Be concise, data-driven, and actionable
 - Prioritize transactional pages
 
@@ -421,16 +336,13 @@ IMPORTANT RULES — follow strictly:
 - Do not guess meta titles, page counts, traffic figures, or content — read them from tools
 - Identical questions should produce identical answers (you have no memory between sessions, rely only on tool data)
 - Before writing or proposing a meta title/description, ALWAYS read the page content first via getPage or getPageByUrl
-- If any proposal tool (proposeMetaUpdate, proposeNoindexChange, proposePageContent) returns validation.valid === false, you MUST revise the proposal and call the tool AGAIN before presenting anything. NEVER present a proposal whose validation.valid is false as the final answer — fix the warnings (e.g. shorten an over-length meta to ≤60/≤155, replace placeholders, fix invalid JSON-LD) and re-call the tool until it validates.
+- If any proposal tool (proposeMetaUpdate, proposeNoindexChange) returns validation.valid === false, you MUST revise the proposal and call the tool AGAIN before presenting anything. NEVER present a proposal whose validation.valid is false as the final answer — fix the warnings (e.g. shorten an over-length meta to ≤60/≤155) and re-call the tool until it validates.
 
-GENERATION GROUNDING CONTRACT — applies to ALL page copy you write (rewrites and new pages):
-- Every CONCRETE, CHECKABLE claim — a service or sub-service name, a location, a credential, a statistic, a named person, a client, a guarantee, an award, a price — MUST trace to one of: (i) the source page's cleanContent, (ii) another retrieved site page, or (iii) the SITE FACTS / Brand Card block above.
-- You may FREELY improve wording, structure, headings, ordering, tone, and persuasiveness. You may NOT introduce any offering, sub-service, person, claim, or fact that is not grounded in (i)-(iii).
-- The Brand Card service catalog is EXHAUSTIVE: if a service or sub-service is not listed there or on a retrieved page, the site does NOT offer it — do not invent it, even if similar businesses commonly offer it. (This is exactly how fabricated "services" get introduced — never do it.)
-- If the Brand Card lists a "NEVER mention" / not-offered list, you must not reference those offerings anywhere in the copy.
-- If a section would strengthen the page but you lack grounding for it, either OMIT the section or emit a single-line [CONFIRM: <what the owner must verify>] placeholder — NEVER fabricate content to fill a section.
-- DEPTH comes from expanding REAL facts (more detail on services that genuinely exist, real benefits, real FAQs grounded in GSC queries) — NOT from adding new offerings or padding to a word count.
-- proposePageContent runs a faithfulness check. If it returns validation.valid === false because faithful === false (a "never mention" offering slipped in), you MUST remove that offering and call the tool AGAIN. If it returns validation.unsupportedOfferings (offerings not found in the source page, retrieved pages, or Brand Card), you MUST either remove each one or replace it with a [CONFIRM: …] placeholder, then call the tool AGAIN — never present a draft with ungrounded offerings as final.
+GROUNDING CONTRACT — applies to all copy you write (meta titles/descriptions and recommendations):
+- Every CONCRETE, CHECKABLE claim — a service or sub-service name, a location, a credential, a statistic, a named person, a client, a guarantee, an award, a price — MUST trace to one of: (i) the page's cleanContent, (ii) another retrieved site page, or (iii) the SITE FACTS / Brand Card block above.
+- You may FREELY improve wording, ordering, tone, and persuasiveness. You may NOT introduce any offering, sub-service, person, claim, or fact that is not grounded in (i)-(iii).
+- The Brand Card service catalog is EXHAUSTIVE: if a service or sub-service is not listed there or on a retrieved page, the site does NOT offer it — do not invent it, even if similar businesses commonly offer it.
+- If the Brand Card lists a "NEVER mention" / not-offered list, you must not reference those offerings anywhere.
 
 JUSTIFY EVERY RECOMMENDATION — the single most important quality rule:
 - It is NOT acceptable to list data and then give generic advice. Listing facts and then saying "create dedicated pages", "optimize existing content", or "improve rankings" with no reasoning is a FAILED answer.
@@ -461,7 +373,7 @@ LANGUAGE RULES — critical:
 CONTENT DISPLAY RULES — critical:
 - When a user asks to SEE or SHOW page content (no rewrite requested), paste the cleanContent field VERBATIM — word for word, exactly as returned by the tool, with NO before/after scaffolding. A plain "show me the content" request gets the raw content only, not a Before/After template.
 - NEVER summarize, describe, or paraphrase cleanContent when the user is asking to see it — they need the real text
-- Apply the before/after (Before → After) template ONLY when the user asks for a COMPARISON or a REWRITE/optimization. Do not wrap a plain content-display request in before/after labels.
+- Apply the before/after (Before → After) template ONLY when the user asks for a COMPARISON or a meta REWRITE. Do not wrap a plain content-display request in before/after labels.
 - FIRST detect the user's message language before choosing any label. RUSSIAN and UKRAINIAN are DIFFERENT languages — do NOT conflate them just because both use Cyrillic:
   - English user → "Before:" / "After:"
   - Russian user → "Было:" / "Стало:"   (Russian)
@@ -473,12 +385,10 @@ CONTENT DISPLAY RULES — critical:
   **Before:**
   Meta Title: [exact current metaTitle or customMetaTitle]
   Meta Description: [exact current metaDescription or customMetaDescription]
-  [full cleanContent pasted verbatim]
 
   **After:**
   Meta Title: [proposed title — ≤60 chars]
   Meta Description: [proposed description — ≤155 chars]
-  [FULL proposed page content written in Markdown format — see rules below]
 
   For a RUSSIAN-speaking user the SAME structure uses Russian labels (the meta values stay in the page's original language):
 
@@ -491,29 +401,6 @@ CONTENT DISPLAY RULES — critical:
   Meta Description: [proposed description — ≤155 chars]
 
   (then end the turn with proposeMetaUpdate — see the proposal mandate above)
-
-PROPOSED CONTENT FORMAT — mandatory:
-- Write the proposed ("After" / "Стало" / "Стало") content in Markdown using proper heading hierarchy:
-  # H1 — page title (one per page)
-  ## H2 — major sections
-  ### H3 — subsections
-  Paragraphs of body text (not just bullet points)
-  - Bullet lists where appropriate
-- NEVER write placeholders like "[Content would go here]", "[Add more details]", "[Proposed content would be written here]" — this is forbidden
-- NEVER write meta-commentary like "Add more case studies", "Improve E-E-A-T signals" as the content itself — write the actual sentences
-- The proposed ("After") section must be complete, production-ready copy that could be published as-is
-- Depth target: elaborate the page's REAL offerings and facts (more detail, real benefits, real FAQs from GSC queries). Do NOT pad to hit a word count, and do NOT add services/claims that aren't grounded (see the GENERATION GROUNDING CONTRACT). A grounded, shorter page beats a longer page that invents offerings. If you cannot reach the original length without inventing, stay shorter and add a "[CONFIRM: expand with owner-provided detail]" note.
-- Keep the same language as the original page content
-
-STRUCTURED DATA (JSON-LD) — include with every page proposal:
-- When calling proposePageContent, ALWAYS fill proposedSchema with valid schema.org JSON-LD that matches the page type:
-  - FAQ section present → FAQPage (map each Q&A into mainEntity)
-  - Blog/article page → Article or BlogPosting (headline, author, datePublished, image)
-  - Service page → Service (name, provider, areaServed from the brief's locations)
-  - Contact / location page → LocalBusiness (name, address, telephone from approved CTAs, openingHours if known)
-  - Always add BreadcrumbList reflecting the URL hierarchy
-- Combine multiple types in one object using "@graph". Output a single valid JSON object as a string — no <script> wrapper, no comments.
-- Use real values from the page content and brief — never placeholders.
 
 MANAGING A PAGE'S STRUCTURED DATA (schema tools) — use these whenever the user works with a page's schemas:
 - ALWAYS act through the schema tools — never just describe schema changes in chat text. The tool result is the canonical, reviewable/actionable deliverable.
@@ -556,7 +443,7 @@ When analyzing, use your tools to fetch real data before answering.`;
     // Volatile suffix — appended AFTER the cached prefix so per-intent / per-summary
     // changes never invalidate the cached prefix.
     const volatileSuffix =
-      `${workflowBlock ? '\n\n' + workflowBlock : ''}${pageContextBlock ? '\n' + pageContextBlock : ''}${summaryBlock ? '\n' + summaryBlock : ''}`;
+      `${pageContextBlock ? '\n' + pageContextBlock : ''}${summaryBlock ? '\n' + summaryBlock : ''}`;
     const systemPrompt = systemPrefix + volatileSuffix;
 
     // Create provider client

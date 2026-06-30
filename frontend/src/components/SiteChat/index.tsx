@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useMemo, FormEvent, KeyboardEvent, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  Plus, Trash2, Sparkles, Loader2, Send, ChevronDown, MessageSquare, FileText,
+  Plus, Trash2, Sparkles, Loader2, Send, ChevronDown, MessageSquare,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -273,69 +272,6 @@ function NoindexCard({ proposal, siteId }: { proposal: any; siteId: string }) {
   )
 }
 
-function ContentBriefCard({
-  proposal,
-  siteId,
-  sessionId,
-}: {
-  proposal: any
-  siteId: string
-  sessionId: string | null
-}) {
-  const navigate = useNavigate()
-  return (
-    <div className="bg-[#0f1117] border border-[#4e8af4]/20 rounded-xl p-4 text-[13px] my-2 max-w-md">
-      <div className="flex items-center gap-1.5 mb-2 font-semibold text-[#e8eaed]">
-        <FileText className="size-4 text-[#4e8af4]" /> Brief saved
-      </div>
-      <div className="text-[#e8eaed] text-[12px] mb-1 line-clamp-2">
-        {proposal.proposedMetaTitle || proposal.pageUrl}
-      </div>
-      <div className="text-[#9aa0a6] text-[11px] mb-3 truncate">{proposal.pageUrl}</div>
-      {proposal.briefId ? (
-        <button
-          onClick={() =>
-            navigate(`/sites/${siteId}/briefs/${proposal.briefId}`, {
-              state: { sessionId },
-            })
-          }
-          className="px-3 py-1.5 rounded-lg bg-[#4e8af4] text-white text-[12px] hover:bg-[#4e8af4]/90 transition-colors"
-        >
-          Open brief
-        </button>
-      ) : (
-        <span className="text-[11px] text-[#9aa0a6]">Saved to Briefs</span>
-      )}
-    </div>
-  )
-}
-
-function OpenBriefCard({
-  output,
-  siteId,
-  sessionId,
-}: {
-  output: any
-  siteId: string
-  sessionId: string | null
-}) {
-  const navigate = useNavigate()
-  return (
-    <div className="my-2">
-      <button
-        onClick={() =>
-          navigate(`/sites/${siteId}/briefs/${output.briefId}`, {
-            state: { sessionId },
-          })
-        }
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4e8af4] text-white text-[12px] hover:bg-[#4e8af4]/90 transition-colors"
-      >
-        <FileText className="size-3.5" /> Open brief for editing
-      </button>
-    </div>
-  )
-}
-
 /**
  * Optional extension point: lets a wrapper (e.g. SchemaAssistantPanel) render
  * custom cards for its own tool outputs. Return a node to take over rendering of
@@ -416,16 +352,6 @@ function MessageBubble({
               if (out.type === 'proposal' && out.action === 'noindex_change') {
                 return <NoindexCard key={i} proposal={out} siteId={siteId} />
               }
-              if (out.type === 'proposal' && out.action === 'content_proposal') {
-                return (
-                  <ContentBriefCard key={i} proposal={out} siteId={siteId} sessionId={sessionId} />
-                )
-              }
-              if (out.type === 'navigation' && out.action === 'open_brief') {
-                return (
-                  <OpenBriefCard key={i} output={out} siteId={siteId} sessionId={sessionId} />
-                )
-              }
             }
 
             if (isLoading) {
@@ -456,7 +382,6 @@ function MessageBubble({
 export interface SiteChatProps {
   siteId: string
   initialSessionId?: string
-  scope?: 'general' | 'brief'
   hideSessionSidebar?: boolean
   /** When embedded on a specific page, sent with every request so server-side
    * tools (schema tools) default to it. */
@@ -471,7 +396,6 @@ export interface SiteChatProps {
 export default function SiteChat({
   siteId,
   initialSessionId,
-  scope = 'general',
   hideSessionSidebar = false,
   pageContext,
   renderToolOutput,
@@ -513,7 +437,7 @@ export default function SiteChat({
     body: streamBody,
   })
 
-  // Load history when an initial session id is supplied (e.g. brief page).
+  // Load history when an initial session id is supplied.
   useEffect(() => {
     if (!initialSessionId) return
     let cancelled = false
@@ -604,13 +528,10 @@ export default function SiteChat({
     qc.invalidateQueries({ queryKey: ['pages', siteId] })
   }
 
-  const emptyTitle =
-    emptyTitleOverride ?? (scope === 'brief' ? 'Brief assistant' : 'AI SEO Assistant')
+  const emptyTitle = emptyTitleOverride ?? 'AI SEO Assistant'
   const emptyBlurb =
     emptyBlurbOverride ??
-    (scope === 'brief'
-      ? 'Ask the assistant to refine this brief, propose alternatives, or generate related pages.'
-      : "Ask anything about your site's SEO. I can analyze pages, query Search Console, suggest optimizations, and create structured reports.")
+    "Ask anything about your site's SEO. I can analyze pages, query Search Console, suggest optimizations, and create structured reports."
 
   return (
     <div className="h-full overflow-hidden flex">

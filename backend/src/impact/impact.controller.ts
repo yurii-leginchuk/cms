@@ -22,7 +22,7 @@ export class ImpactController {
     private readonly annotations: ImpactAnnotationsService,
   ) {}
 
-  /** Unified change-event feed (meta / technical / schema / brief). */
+  /** Unified change-event feed (meta / technical / schema). */
   @Get('events')
   listEvents(@Param('siteId') siteId: string, @Query('pageId') pageId?: string) {
     return this.events.listEvents(siteId, pageId || undefined);

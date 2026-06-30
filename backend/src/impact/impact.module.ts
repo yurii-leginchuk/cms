@@ -8,7 +8,6 @@ import { KeywordDaily } from './keyword-daily.entity';
 import { MetaHistory } from '../pages/meta-history.entity';
 import { Page } from '../pages/page.entity';
 import { SchemaHistory } from '../schema/schema-history.entity';
-import { Brief } from '../briefs/brief.entity';
 import { OptimizationEffect } from '../optimization-effects/optimization-effect.entity';
 import { BrandCard } from '../sites/brand-card.entity';
 import { ChangeEventsService } from './change-events.service';
@@ -22,7 +21,7 @@ import { ImpactController } from './impact.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      GscDaily, ImpactAnnotation, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, Brief, OptimizationEffect, BrandCard,
+      GscDaily, ImpactAnnotation, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, OptimizationEffect, BrandCard,
     ]),
     GscModule,
   ],
