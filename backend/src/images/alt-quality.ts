@@ -5,7 +5,7 @@
  * placeholder / meaningful is a deliberate product decision, not a hidden regex.
  *
  *  - absent       : the <img> had no alt attribute at all → needs alt
- *  - empty        : alt="" → INTENTIONALLY decorative; a VALID outcome, not a defect
+ *  - empty        : alt="" → needs alt (every image must carry a real description)
  *  - junkFilename : alt is basically the file name (DSC_0042, hero-final-v2.jpg)
  *  - placeholder  : generic ("image", "image 1", "img", "photo") → needs alt
  *  - meaningful   : real human/AI description → leave alone unless user edits
@@ -53,19 +53,15 @@ export function classifyAlt(
 }
 
 /**
- * Does this image need alt work? Only `meaningful` is "done". An observed
- * `empty` (alt="") is NOT auto-treated as decorative — absence of alt is a work
- * item requiring a decision (write alt, or deliberately mark decorative). The
- * deliberate-decorative case is tracked by the SiteImage.decorative flag and is
- * excluded by callers, so it never re-enters the work queue.
+ * Does this image need alt work? Only `meaningful` is "done". Every image must
+ * carry a real description, so an observed `empty` (alt="") is a work item too.
  */
 export function needsAlt(q: AltQuality): boolean {
   return q !== 'meaningful';
 }
 
 /** A placement "has alt" for the honest per-placement coverage metric. Only a
- *  meaningful alt counts; an observed empty alt is treated as not-yet-covered
- *  (a deliberate decorative decision is handled at the image level, not here). */
+ *  meaningful alt counts; an observed empty alt is treated as not-yet-covered. */
 export function placementHasAlt(q: AltQuality): boolean {
   return q === 'meaningful';
 }

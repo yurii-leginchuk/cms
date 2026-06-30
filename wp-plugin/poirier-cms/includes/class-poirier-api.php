@@ -176,21 +176,33 @@ class Poirier_API {
 	 * Public so the schema module can reuse the same URL→post resolution.
 	 */
 	public static function resolve_post_id( string $url ): int|string|null {
-		// Normalise both URLs for comparison
+		$front_id = (int) get_option( 'page_on_front' );
+
+		// 1. Post-identifying query vars (?p=, ?page_id=, ?attachment_id=) must be
+		//    resolved BEFORE the home-URL comparison: stripping the query string
+		//    (below) would otherwise make e.g. "https://site/?p=123" — the permalink
+		//    of a post without a pretty URL — look identical to the homepage.
+		$query_id = self::post_id_from_query( $url );
+		if ( $query_id !== null ) {
+			return ( $front_id > 0 && $query_id === $front_id ) ? 'homepage' : $query_id;
+		}
+
+		// 2. The bare home URL (path only, no identifying query) is the homepage.
 		$url_normalised  = trailingslashit( strtok( $url, '?' ) );
 		$home_normalised = trailingslashit( home_url() );
-
 		if ( $url_normalised === $home_normalised ) {
 			return 'homepage';
 		}
 
-		// WP's built-in resolver (handles pages, posts, CPTs)
+		// 3. WP's built-in resolver (handles pages, posts, CPTs by pretty permalink)
 		$post_id = url_to_postid( $url );
 		if ( $post_id > 0 ) {
-			return $post_id;
+			// A pretty permalink pointing at the static front page is the homepage,
+			// so its schema/meta round-trips through the same storage as "/".
+			return ( $front_id > 0 && $post_id === $front_id ) ? 'homepage' : $post_id;
 		}
 
-		// Fallback: query by guid (covers some edge cases with custom URLs)
+		// 4. Fallback: query by guid (covers some edge cases with custom URLs)
 		global $wpdb;
 		$post_id = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT ID FROM {$wpdb->posts}
@@ -202,6 +214,29 @@ class Poirier_API {
 		) );
 
 		return $post_id > 0 ? $post_id : null;
+	}
+
+	/**
+	 * Extract a post ID from WordPress's identifying query vars (?p=, ?page_id=,
+	 * ?attachment_id=). Pure string parsing that mirrors url_to_postid()'s own
+	 * leading check, so query-string permalinks resolve correctly. Returns null
+	 * when no such var is present or it isn't a positive integer.
+	 */
+	private static function post_id_from_query( string $url ): ?int {
+		$query = (string) parse_url( $url, PHP_URL_QUERY );
+		if ( $query === '' ) {
+			return null;
+		}
+		parse_str( $query, $vars );
+		foreach ( [ 'p', 'page_id', 'attachment_id' ] as $key ) {
+			if ( isset( $vars[ $key ] ) && ctype_digit( (string) $vars[ $key ] ) ) {
+				$id = (int) $vars[ $key ];
+				if ( $id > 0 ) {
+					return $id;
+				}
+			}
+		}
+		return null;
 	}
 
 	// ── Helpers ─────────────────────────────────────────────────────────────────

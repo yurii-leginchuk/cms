@@ -12,6 +12,7 @@ import {
 import { ImageService } from './image.service';
 import { ImageAiService } from './image-ai.service';
 import { ImageSyncService } from './image-sync.service';
+import { ImageAutopilotService } from './image-autopilot.service';
 
 /** Site-level image library endpoints. */
 @Controller('sites/:siteId/images')
@@ -20,6 +21,7 @@ export class ImageSiteController {
     private readonly imageService: ImageService,
     private readonly imageAiService: ImageAiService,
     private readonly imageSyncService: ImageSyncService,
+    private readonly imageAutopilotService: ImageAutopilotService,
   ) {}
 
   /** Paginated, filterable image library (the dedicated Images page). */
@@ -50,6 +52,18 @@ export class ImageSiteController {
   @HttpCode(HttpStatus.OK)
   reconcile(@Param('siteId') siteId: string) {
     return this.imageService.reconcileSite(siteId);
+  }
+
+  /**
+   * Run the ALT autopilot now: ingest WP media (detect new) → generate grounded
+   * alt for missing images → auto-apply the confident ones to WP (no review),
+   * holding only risky suggestions. This is the same routine the nightly cron
+   * runs; exposed for on-demand use and testing.
+   */
+  @Post('autopilot')
+  @HttpCode(HttpStatus.OK)
+  autopilot(@Param('siteId') siteId: string) {
+    return this.imageAutopilotService.runForSite(siteId);
   }
 
   /** Generate grounded AI alt for every image still missing alt. */
@@ -97,22 +111,8 @@ export class ImageController {
 
   /** Human edit / set the alt (→ modified, appliable). */
   @Put('alt')
-  setAlt(
-    @Param('imageId') imageId: string,
-    @Body() body: { alt: string; decorative?: boolean },
-  ) {
-    return this.imageService.setAlt(imageId, body.alt ?? '', {
-      decorative: body.decorative,
-    });
-  }
-
-  @Post('decorative')
-  @HttpCode(HttpStatus.OK)
-  decorative(
-    @Param('imageId') imageId: string,
-    @Body() body: { decorative: boolean },
-  ) {
-    return this.imageService.markDecorative(imageId, body.decorative);
+  setAlt(@Param('imageId') imageId: string, @Body() body: { alt: string }) {
+    return this.imageService.setAlt(imageId, body.alt ?? '');
   }
 
   /** Approve an AI suggestion as-is. */

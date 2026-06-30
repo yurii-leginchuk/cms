@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import type { SiteImageRow, ImageAltStatus } from '@/api/images'
 import {
   useGenerateForImage, useSetImageAlt, useApproveImage,
-  useRevertImage, useApplyImage, useMarkDecorative,
+  useRevertImage, useApplyImage,
 } from '@/hooks/useImages'
 import { toast } from 'sonner'
 
@@ -31,7 +31,6 @@ export function ImageAltRow({ siteId, image }: { siteId: string; image: SiteImag
   const approve = useApproveImage(siteId)
   const revert = useRevertImage(siteId)
   const apply = useApplyImage(siteId)
-  const decorative = useMarkDecorative(siteId)
 
   const chip = STATE_CHIP[image.status]
   const currentAlt = image.draftAlt ?? image.observedAlt ?? ''
@@ -132,9 +131,7 @@ export function ImageAltRow({ siteId, image }: { siteId: string; image: SiteImag
               className="mt-1.5 text-[13px] text-[#e8eaed] cursor-text"
               onClick={() => { setDraft(currentAlt); setEditing(true) }}
             >
-              {image.decorative ? (
-                <span className="italic text-[#9aa0a6]">Decorative (alt="")</span>
-              ) : currentAlt ? (
+              {currentAlt ? (
                 <span>
                   {image.observedAlt && image.draftAlt && image.observedAlt !== image.draftAlt && (
                     <span className="line-through text-[#9aa0a6]/50 mr-2">{image.observedAlt}</span>
@@ -194,12 +191,6 @@ export function ImageAltRow({ siteId, image }: { siteId: string; image: SiteImag
                   <Check className="size-3" /> Approve
                 </Button>
               )}
-              <Button
-                size="sm" variant="ghost" className="h-6 text-[11px]"
-                onClick={() => decorative.mutate({ imageId: image.id, decorative: !image.decorative })}
-              >
-                {image.decorative ? 'Unmark decorative' : 'Mark decorative'}
-              </Button>
               {pending && (
                 <Button
                   size="sm" className="h-6 text-[11px]" disabled={hasForbidden || apply.isPending}

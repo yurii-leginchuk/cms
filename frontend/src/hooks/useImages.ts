@@ -67,17 +67,8 @@ export function useGenerateForImage(siteId: string) {
 export function useSetImageAlt(siteId: string) {
   const invalidate = useInvalidateImages(siteId)
   return useMutation({
-    mutationFn: (v: { imageId: string; alt: string; decorative?: boolean }) =>
-      imagesApi.setImageAlt(siteId, v.imageId, v.alt, v.decorative),
-    onSuccess: invalidate,
-  })
-}
-
-export function useMarkDecorative(siteId: string) {
-  const invalidate = useInvalidateImages(siteId)
-  return useMutation({
-    mutationFn: (v: { imageId: string; decorative: boolean }) =>
-      imagesApi.markDecorative(siteId, v.imageId, v.decorative),
+    mutationFn: (v: { imageId: string; alt: string }) =>
+      imagesApi.setImageAlt(siteId, v.imageId, v.alt),
     onSuccess: invalidate,
   })
 }
