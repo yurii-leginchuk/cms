@@ -19,7 +19,7 @@ the published port (`http://localhost:3000`, global prefix `/api`).
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `CMS_BASE_URL` | `http://localhost:3000` | CMS origin **without** the `/api` prefix. |
-| `CMS_API_KEY` | _(unset)_ | Optional. When set, sent as both `Authorization: Bearer <key>` and `X-API-Key: <key>` (forward-compat with auth landing on another branch). |
+| `CMS_API_KEY` | _(unset)_ | Shared key for the backend's API-key gate (`ApiKeyGuard`). When set, sent as both `Authorization: Bearer <key>` and `X-API-Key: <key>`. Must match the backend's `MCP_API_KEY`; if the backend leaves `MCP_API_KEY` empty the gate is off and this is ignored. |
 | `CMS_DEFAULT_SITE_ID` | _(unset)_ | Optional default `siteId` used when a tool omits it. |
 
 ---
@@ -56,7 +56,10 @@ Already merged into the repo-root `.mcp.json` (alongside `shadcn` / `playwright`
 ```
 
 Build first (`npm run build`) so `dist/index.js` exists. To set a default site, add
-`"CMS_DEFAULT_SITE_ID": "<uuid>"` to the `env` block.
+`"CMS_DEFAULT_SITE_ID": "<uuid>"` to the `env` block. When the backend's API-key gate is
+enabled, also add `"CMS_API_KEY": "<key>"` (matching the backend's `MCP_API_KEY`) — keep the
+real secret out of version control (use a local override or your shell environment, which the
+spawned process inherits).
 
 Alternatively, via the CLI:
 
