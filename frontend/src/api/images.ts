@@ -13,6 +13,7 @@ export interface SiteImageRow {
   id: string
   canonicalKey: string
   canonicalUrl: string
+  wpAttachmentId: number | null
   draftAlt: string | null
   observedAlt: string | null
   observedQuality: AltQuality
@@ -123,6 +124,26 @@ export async function setImageAlt(
   alt: string,
 ): Promise<SiteImageRow> {
   const { data } = await apiClient.put(`${base(siteId)}/${imageId}/alt`, { alt })
+  return data.data
+}
+
+export interface UploadedMedia {
+  id: number
+  url: string
+  width: number | null
+  height: number | null
+  mime: string
+}
+
+/** Upload a local image file → WordPress media library → returns its attachment. */
+export async function uploadOgImage(siteId: string, file: File): Promise<UploadedMedia> {
+  const form = new FormData()
+  form.append('file', file)
+  // Override the client's default application/json so the browser sets a proper
+  // multipart/form-data boundary (otherwise multer can't parse the file → 400).
+  const { data } = await apiClient.post(`${base(siteId)}/upload`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
   return data.data
 }
 

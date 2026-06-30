@@ -8,11 +8,23 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ImageService } from './image.service';
 import { ImageAiService } from './image-ai.service';
 import { ImageSyncService } from './image-sync.service';
 import { ImageAutopilotService } from './image-autopilot.service';
+import { WpMediaService } from './wp-media.service';
+
+/** Minimal shape of a multer in-memory upload (avoids the @types/multer dep). */
+interface UploadedImage {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
 
 /** Site-level image library endpoints. */
 @Controller('sites/:siteId/images')
@@ -22,7 +34,24 @@ export class ImageSiteController {
     private readonly imageAiService: ImageAiService,
     private readonly imageSyncService: ImageSyncService,
     private readonly imageAutopilotService: ImageAutopilotService,
+    private readonly wpMediaService: WpMediaService,
   ) {}
+
+  /**
+   * Upload a local image file → store it in the site's WordPress media library →
+   * return the new attachment's id + URL + dimensions (for the OG-image picker).
+   */
+  @Post('upload')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }),
+  )
+  upload(
+    @Param('siteId') siteId: string,
+    @UploadedFile() file: UploadedImage,
+  ) {
+    return this.wpMediaService.upload(siteId, file);
+  }
 
   /** Paginated, filterable image library (the dedicated Images page). */
   @Get()

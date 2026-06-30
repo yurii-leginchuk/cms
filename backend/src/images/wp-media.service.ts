@@ -99,6 +99,61 @@ export class WpMediaService {
     return { fetched, created, updated };
   }
 
+  /**
+   * Upload an image file to the site's WordPress media library (via the plugin's
+   * `/media-upload`) and return the new attachment's id + URL + dimensions. Used
+   * by the meta editor so a user can pick a local file → it lands in WP → its URL
+   * becomes the OG image.
+   */
+  async upload(
+    siteId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+  ): Promise<{ id: number; url: string; width: number | null; height: number | null; mime: string }> {
+    const site = await this.siteRepo.findOne({ where: { id: siteId } });
+    if (!site) throw new NotFoundException('Site not found');
+    if (!site.wpApiKey) {
+      throw new BadRequestException('No WP API key configured for this site.');
+    }
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('No file uploaded.');
+    }
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Only image files are allowed.');
+    }
+
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }),
+      file.originalname || 'upload',
+    );
+
+    try {
+      const { data } = await axios.post(
+        `${site.url}/wp-json/poirier-cms/v1/media-upload`,
+        form,
+        {
+          headers: { 'X-Poirier-API-Key': site.wpApiKey },
+          timeout: 30_000,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        },
+      );
+      return {
+        id: Number(data.id),
+        url: String(data.url),
+        width: data.width ?? null,
+        height: data.height ?? null,
+        mime: String(data.mime ?? file.mimetype),
+      };
+    } catch (err) {
+      const msg = axios.isAxiosError(err)
+        ? `HTTP ${err.response?.status ?? 'no response'}: ${err.response?.data?.message ?? err.message}`
+        : (err as Error).message;
+      throw new ServiceUnavailableException(`Media upload failed: ${msg}`);
+    }
+  }
+
   private async fetchPage(site: Site, page: number): Promise<WpMediaPage> {
     try {
       const { data } = await axios.get<WpMediaPage>(

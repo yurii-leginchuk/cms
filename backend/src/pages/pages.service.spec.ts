@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { PagesService } from './pages.service';
-import { Page, PageSyncStatus } from './page.entity';
+import { Page, PageSyncStatus, IndexDirective } from './page.entity';
 import { MetaHistory } from './meta-history.entity';
 import { SyncService } from '../sync/sync.service';
 import { AiService } from '../ai/ai.service';
@@ -28,7 +28,14 @@ const mockPage: Page = {
   customMetaDescription: null,
   isTransactional: false,
   noindex: false,
+  indexDirective: IndexDirective.DEFAULT,
+  nofollow: false,
   canonical: null,
+  ogTitle: null,
+  ogDescription: null,
+  ogImage: null,
+  ogImageId: null,
+  lastSyncedMeta: null,
   syncStatus: PageSyncStatus.IDLE,
   syncError: null,
   syncAppliedAt: null,
@@ -55,6 +62,8 @@ const mockRepo = {
   save: jest.fn(),
 };
 
+const mockSync = { enqueue: jest.fn() };
+
 describe('PagesService', () => {
   let service: PagesService;
 
@@ -66,7 +75,7 @@ describe('PagesService', () => {
         { provide: getRepositoryToken(MetaHistory), useValue: { save: jest.fn(), create: jest.fn() } },
         { provide: getRepositoryToken(Site), useValue: { findOne: jest.fn() } },
         { provide: getRepositoryToken(SiteBrief), useValue: { findOne: jest.fn() } },
-        { provide: SyncService, useValue: { enqueue: jest.fn() } },
+        { provide: SyncService, useValue: mockSync },
         { provide: AiService, useValue: { generateMeta: jest.fn() } },
         { provide: PromptsService, useValue: { findEffective: jest.fn() } },
         { provide: OptimizationEffectsService, useValue: { captureBaseline: jest.fn().mockResolvedValue(undefined) } },
@@ -137,6 +146,47 @@ describe('PagesService', () => {
 
       expect(mockRepo.save).toHaveBeenCalled();
       expect(result.customMetaTitle).toBe('New Title');
+    });
+
+    it('mirrors indexDirective=noindex into the legacy boolean and enqueues a sync', async () => {
+      mockRepo.findOne.mockResolvedValue({ ...mockPage });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      const result = await service.updateMeta('page-uuid-1', {
+        indexDirective: IndexDirective.NOINDEX,
+      });
+
+      expect(result.indexDirective).toBe(IndexDirective.NOINDEX);
+      expect(result.noindex).toBe(true);
+      expect(mockSync.enqueue).toHaveBeenCalledWith('site-uuid-1', 'page-uuid-1');
+    });
+
+    it('mirrors a legacy noindex=true (agent) into indexDirective', async () => {
+      mockRepo.findOne.mockResolvedValue({ ...mockPage });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      const result = await service.updateMeta('page-uuid-1', { noindex: true });
+
+      expect(result.indexDirective).toBe(IndexDirective.NOINDEX);
+      expect(result.noindex).toBe(true);
+    });
+
+    it('enqueues a sync when only an OG field changes', async () => {
+      mockRepo.findOne.mockResolvedValue({ ...mockPage });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      await service.updateMeta('page-uuid-1', { ogImage: 'https://cdn.test/og.png' });
+
+      expect(mockSync.enqueue).toHaveBeenCalledWith('site-uuid-1', 'page-uuid-1');
+    });
+
+    it('does not enqueue a sync when nothing changes', async () => {
+      mockRepo.findOne.mockResolvedValue({ ...mockPage });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      await service.updateMeta('page-uuid-1', { noindex: false });
+
+      expect(mockSync.enqueue).not.toHaveBeenCalled();
     });
   });
 });

@@ -19,6 +19,20 @@ export enum PageSyncStatus {
   FAILED = 'failed',
 }
 
+/**
+ * Robots `index` directive — Yoast tri-state (`_yoast_wpseo_meta-robots-noindex`):
+ *  - DEFAULT  → key absent      → page follows the post-type default in Yoast.
+ *  - INDEX    → '2'             → explicit "force index" (rare; pins the page).
+ *  - NOINDEX  → '1'             → explicit noindex.
+ * The legacy boolean `Page.noindex` is kept in sync (true ⇔ NOINDEX) so the AI
+ * agent / chat / embedding code that reads it keeps working unchanged.
+ */
+export enum IndexDirective {
+  DEFAULT = 'default',
+  INDEX = 'index',
+  NOINDEX = 'noindex',
+}
+
 @Entity('pages')
 export class Page {
   @PrimaryGeneratedColumn('uuid')
@@ -68,11 +82,50 @@ export class Page {
   @Column({ default: false })
   isTransactional: boolean;
 
+  /**
+   * Legacy boolean noindex intent — kept for the agent/chat/embedding code.
+   * Mirrors `indexDirective === NOINDEX`. New code should prefer indexDirective.
+   */
   @Column({ default: false })
   noindex: boolean;
 
+  /** Robots index directive (tri-state) — authoritative for the Yoast push. */
+  @Column({ type: 'enum', enum: IndexDirective, default: IndexDirective.DEFAULT })
+  indexDirective: IndexDirective;
+
+  /** Robots nofollow override. false = follow (Yoast default), true = nofollow. */
+  @Column({ default: false })
+  nofollow: boolean;
+
   @Column({ length: 2048, nullable: true })
   canonical: string | null;
+
+  // ── Open Graph overrides (blank ⇒ inherit Yoast's title/description) ────────
+
+  @Column({ length: 500, nullable: true })
+  ogTitle: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  ogDescription: string | null;
+
+  /** Full URL of the OG image (`_yoast_wpseo_opengraph-image`). */
+  @Column({ length: 2048, nullable: true })
+  ogImage: string | null;
+
+  /** Media-library attachment id (`_yoast_wpseo_opengraph-image-id`); null for
+   *  externally-hosted URLs. Set together with ogImage when picked from library. */
+  @Column({ type: 'bigint', nullable: true })
+  ogImageId: number | null;
+
+  /**
+   * Snapshot of the override fields the CMS LAST successfully pushed to WP
+   * (the managed keys/values from {@link buildManagedMeta}). Lets the sync push
+   * an explicit empty for a field the CMS applied before but the user has since
+   * cleared — so it's actually deleted on WP — while still OMITTING (and thus
+   * never clobbering) fields the CMS has never managed on this page.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  lastSyncedMeta: Record<string, string | number> | null;
 
   @Column({ type: 'enum', enum: PageSyncStatus, default: PageSyncStatus.IDLE })
   syncStatus: PageSyncStatus;

@@ -14,6 +14,8 @@ export interface SiteImageRow {
   id: string;
   canonicalKey: string;
   canonicalUrl: string;
+  /** WP media attachment id when reconciled; null for scrape-only images. */
+  wpAttachmentId: number | null;
   draftAlt: string | null;
   observedAlt: string | null;
   observedQuality: string;
@@ -239,6 +241,7 @@ export class ImageService {
       id: r.id,
       canonicalKey: r.canonicalKey,
       canonicalUrl: r.canonicalUrl,
+      wpAttachmentId: r.wpAttachmentId != null ? Number(r.wpAttachmentId) : null,
       draftAlt: r.draftAlt,
       observedAlt: r.observedAlt,
       observedQuality: r.observedQuality,

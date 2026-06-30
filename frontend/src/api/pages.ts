@@ -2,6 +2,8 @@ import apiClient from './client'
 
 export type PageSyncStatus = 'idle' | 'pending' | 'syncing' | 'synced' | 'failed'
 
+export type IndexDirective = 'default' | 'index' | 'noindex'
+
 export interface Page {
   id: string
   siteId: string
@@ -15,7 +17,13 @@ export interface Page {
   customMetaDescription: string | null
   isTransactional: boolean
   noindex: boolean
+  indexDirective: IndexDirective
+  nofollow: boolean
   canonical: string | null
+  ogTitle: string | null
+  ogDescription: string | null
+  ogImage: string | null
+  ogImageId: number | null
   syncStatus: PageSyncStatus
   syncError: string | null
   syncAppliedAt: string | null
@@ -39,14 +47,30 @@ export interface UpdatePageMetaPayload {
   customMetaDescription?: string | null
   isTransactional?: boolean
   noindex?: boolean
+  indexDirective?: IndexDirective
+  nofollow?: boolean
   canonical?: string | null
+  ogTitle?: string | null
+  ogDescription?: string | null
+  ogImage?: string | null
+  ogImageId?: number | null
   skipSync?: boolean
 }
+
+export type MetaHistoryField =
+  | 'title'
+  | 'description'
+  | 'noindex'
+  | 'nofollow'
+  | 'canonical'
+  | 'ogTitle'
+  | 'ogDescription'
+  | 'ogImage'
 
 export interface MetaHistoryEntry {
   id: string
   pageId: string
-  field: 'title' | 'description' | 'noindex' | 'canonical'
+  field: MetaHistoryField
   oldValue: string | null
   newValue: string | null
   createdAt: string
