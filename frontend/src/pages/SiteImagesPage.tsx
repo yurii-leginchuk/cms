@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { McpChangesBanner } from '@/components/McpChangesBanner'
 import {
   Image as ImageIcon, Search, RefreshCw, Sparkles, UploadCloud, ImageOff,
 } from 'lucide-react'
@@ -80,6 +81,8 @@ export default function SiteImagesPage() {
       </div>
 
       <div className="mb-4"><CoverageBadge siteId={siteId} /></div>
+
+      <div className="mb-4"><McpChangesBanner siteId={siteId} module="alt" /></div>
 
       {/* Pending banner */}
       {pending > 0 && (

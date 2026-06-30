@@ -16,6 +16,16 @@
         "@playwright/mcp@latest"
       ],
       "env": {}
+    },
+    "poirier-cms": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "mcp-server/dist/index.js"
+      ],
+      "env": {
+        "CMS_BASE_URL": "http://localhost:3000"
+      }
     }
   }
 }

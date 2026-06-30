@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { McpChangesBanner } from '@/components/McpChangesBanner'
 import {
   ChevronRight, ExternalLink, Search, Braces,
   CheckCircle2, AlertTriangle, XCircle, UploadCloud, Bookmark, RefreshCw,
@@ -178,6 +179,7 @@ export default function SiteSchemasPage() {
       </div>
 
       <div className="px-8 py-6 space-y-5">
+        <McpChangesBanner siteId={id} module="schema" />
         {/* Search + coverage */}
         <div className="flex items-center gap-3">
           <div className="relative max-w-md flex-1">

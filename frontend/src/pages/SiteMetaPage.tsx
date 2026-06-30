@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { Link, useParams, Navigate, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
+import { McpChangesBanner } from '@/components/McpChangesBanner'
 import {
   ChevronRight, ExternalLink, RefreshCw, Search,
   Pencil, ChevronLeft, ChevronRight as ChevronRightIcon,
@@ -230,6 +231,7 @@ export default function SiteMetaPage() {
       </div>
 
       <div className="px-8 py-6 space-y-6">
+        <McpChangesBanner siteId={id} module="meta" />
         {/* Search + Sort */}
         <div className="flex items-center gap-3">
           <div className="relative max-w-md flex-1">

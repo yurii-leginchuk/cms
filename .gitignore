@@ -42,5 +42,9 @@ coverage/
 # MCP / local tooling
 .playwright-mcp/
 
+# MCP server (standalone package — build + deps are local-only)
+mcp-server/node_modules/
+mcp-server/dist/
+
 # Local test WordPress site (large Duplicator snapshot — not for VCS)
 /test_website/
