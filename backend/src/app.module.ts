@@ -20,7 +20,6 @@ import { EmbeddingModule } from './embedding/embedding.module';
 import { GscModule } from './gsc/gsc.module';
 import { PageSpeedModule } from './pagespeed/page-speed.module';
 import { CruxModule } from './crux/crux.module';
-import { BriefsModule } from './briefs/briefs.module';
 import { OptimizationEffectsModule } from './optimization-effects/optimization-effects.module';
 import { SchemaModule } from './schema/schema.module';
 import { ImageModule } from './images/image.module';
@@ -54,7 +53,6 @@ import { ImpactModule } from './impact/impact.module';
     GscModule,
     PageSpeedModule,
     CruxModule,
-    BriefsModule,
     OptimizationEffectsModule,
     SchemaModule,
     ImageModule,

@@ -5,7 +5,7 @@ const PLACEHOLDER_RE = /\[(proposed|content|add|insert|your|placeholder|write|to
 
 // ── Structured recommendation argument (Proposal 9) ──────────────────────────
 // Each recommendation must carry a full evidence→reasoning→action→impact argument.
-// The TS interface lives here (pure, no deps) so the Brief entity and the eval
+// The TS interface lives here (pure, no deps) so the proposal tools and the eval
 // harness can share it; the Zod schema that enforces it lives in proposal-tools.ts.
 export interface RecommendationInput {
   evidence: {

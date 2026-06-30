@@ -9,7 +9,7 @@ import { useImpactEvents, useImpactAnnotations } from '@/hooks/useImpact'
 import { TYPE_META } from '@/components/impact/ImpactTimeline'
 import type { ChangeEvent, ChangeEventType } from '@/api/impact'
 
-const TYPE_ORDER: ChangeEventType[] = ['meta', 'technical', 'schema', 'brief']
+const TYPE_ORDER: ChangeEventType[] = ['meta', 'technical', 'schema']
 const ALL_PAGES_LIMIT = 50
 
 /** Per-page roll-up of tracked change events (the pins shown on that page's timeline). */

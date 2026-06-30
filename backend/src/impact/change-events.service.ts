@@ -4,7 +4,6 @@ import { In, Repository } from 'typeorm';
 import { MetaHistory } from '../pages/meta-history.entity';
 import { Page } from '../pages/page.entity';
 import { SchemaHistory } from '../schema/schema-history.entity';
-import { Brief } from '../briefs/brief.entity';
 import { OptimizationEffect } from '../optimization-effects/optimization-effect.entity';
 import { ChangeEvent } from './change-event';
 import { toGscDay, diffDays } from './gsc-date';
@@ -21,7 +20,6 @@ export class ChangeEventsService {
     @InjectRepository(MetaHistory) private readonly metaRepo: Repository<MetaHistory>,
     @InjectRepository(Page) private readonly pageRepo: Repository<Page>,
     @InjectRepository(SchemaHistory) private readonly schemaRepo: Repository<SchemaHistory>,
-    @InjectRepository(Brief) private readonly briefRepo: Repository<Brief>,
     @InjectRepository(OptimizationEffect) private readonly effectRepo: Repository<OptimizationEffect>,
   ) {}
 
@@ -38,17 +36,12 @@ export class ChangeEventsService {
     const pageIds = pages.map((p) => p.id);
     if (pageIds.length === 0 && !pageId) return [];
 
-    const [metaRows, schemaRows, briefs, effects] = await Promise.all([
+    const [metaRows, schemaRows, effects] = await Promise.all([
       pageIds.length
         ? this.metaRepo.find({ where: { pageId: In(pageIds) }, order: { createdAt: 'DESC' }, take: 1000 })
         : Promise.resolve([]),
       this.schemaRepo.find({
         where: pageId ? { siteId, pageId } : { siteId },
-        order: { createdAt: 'DESC' },
-        take: 500,
-      }),
-      this.briefRepo.find({
-        where: pageId ? { siteId, pageId, status: 'applied' } : { siteId, status: 'applied' },
         order: { createdAt: 'DESC' },
         take: 500,
       }),
@@ -164,29 +157,6 @@ export class ChangeEventsService {
         // Schema effects surface as rich-result eligibility (searchAppearance),
         // which the clicks/impressions series can't isolate.
         measurable: false,
-        effectStatus: null,
-        effectId: null,
-        confoundedWith: 0,
-      });
-    }
-
-    // ── Applied briefs ────────────────────────────────────────────────────────
-    for (const brief of briefs) {
-      if (!brief.appliedAt) continue;
-      events.push({
-        id: `brief:${brief.id}`,
-        type: 'brief',
-        subtype: 'brief',
-        pageId: brief.pageId,
-        pageUrl: brief.pageUrl,
-        // appliedAt is a date (no clock); anchor at GSC-day noon for ordering.
-        ts: `${brief.appliedAt}T12:00:00.000Z`,
-        day: brief.appliedAt,
-        precision: 'day',
-        summary: brief.name ? `Brief applied: ${brief.name}` : 'Brief applied',
-        before: null,
-        after: brief.proposedMetaTitle ?? null,
-        measurable: true,
         effectStatus: null,
         effectId: null,
         confoundedWith: 0,

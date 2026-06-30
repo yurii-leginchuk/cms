@@ -1,6 +1,6 @@
 import apiClient from './client'
 
-export type ChangeEventType = 'meta' | 'technical' | 'schema' | 'brief'
+export type ChangeEventType = 'meta' | 'technical' | 'schema'
 export type ChangeEffectStatus = 'pending' | 'measured' | 'no_data'
 
 export interface ChangeEvent {
@@ -98,7 +98,7 @@ export interface PageQueries {
   rows: PageQueryRow[]
 }
 
-export type WatchedKeywordSource = 'manual' | 'brief' | 'semrush'
+export type WatchedKeywordSource = 'manual' | 'semrush'
 
 export interface KeywordAggregate {
   clicks: number

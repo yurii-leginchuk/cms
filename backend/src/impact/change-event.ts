@@ -1,11 +1,11 @@
 /**
- * A single tracked change to the live site, normalized from one of four sources
- * (meta edits, technical edits, schema pushes, applied briefs) into one shape the
+ * A single tracked change to the live site, normalized from one of several sources
+ * (meta edits, technical edits, schema pushes) into one shape the
  * impact timeline can plot. Kept as a plain interface (not an entity) — these are
  * assembled on read, never stored.
  */
 
-export type ChangeEventType = 'meta' | 'technical' | 'schema' | 'brief';
+export type ChangeEventType = 'meta' | 'technical' | 'schema';
 
 export type ChangeEffectStatus = 'pending' | 'measured' | 'no_data';
 
@@ -13,7 +13,7 @@ export interface ChangeEvent {
   /** Stable id: `${type}:${sourceId}` so the frontend can key/select markers. */
   id: string;
   type: ChangeEventType;
-  /** e.g. 'title + description', 'canonical', 'noindex', 'schema', 'brief'. */
+  /** e.g. 'title + description', 'canonical', 'noindex', 'schema'. */
   subtype: string;
   pageId: string | null;
   pageUrl: string;
@@ -21,7 +21,7 @@ export interface ChangeEvent {
   ts: string;
   /** GSC-timezone calendar day the marker sits on (YYYY-MM-DD). */
   day: string;
-  /** 'day' when only a date is known (applied briefs), else 'timestamp'. */
+  /** 'day' when only a date is known, else 'timestamp'. */
   precision: 'day' | 'timestamp';
   summary: string;
   before: string | null;

@@ -21,7 +21,7 @@ describe('buildPersistedAssistantMessage', () => {
           text: '',
           toolCalls: [
             { toolName: 'getFullPageAnalysis', toolCallId: 'c1', input: { url: '/' } },
-            { toolName: 'proposePageContent', toolCallId: 'c2', input: { url: '/' } },
+            { toolName: 'proposeMetaUpdate', toolCallId: 'c2', input: { url: '/' } },
           ],
           toolResults: [
             { toolCallId: 'c1', output: { score: 92 } },
@@ -63,7 +63,7 @@ describe('buildPersistedAssistantMessage', () => {
 
   it('pairs each tool call with its result so the proposal re-renders on reload', () => {
     const { toolInvocations } = buildPersistedAssistantMessage(multiStepEvent());
-    const proposal = toolInvocations!.find((t) => t.toolName === 'proposePageContent');
+    const proposal = toolInvocations!.find((t) => t.toolName === 'proposeMetaUpdate');
     expect(proposal).toBeDefined();
     expect(proposal!.result).toMatchObject({ type: 'proposal', validation: { valid: true } });
     // non-proposal tool result is still preserved

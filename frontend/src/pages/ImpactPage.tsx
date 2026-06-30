@@ -22,7 +22,7 @@ import {
 import { ImpactQueriesPanel } from '@/components/impact/ImpactQueriesPanel'
 import type { ChangeEvent, ChangeEventType } from '@/api/impact'
 
-const ALL_TYPES: ChangeEventType[] = ['meta', 'technical', 'schema', 'brief']
+const ALL_TYPES: ChangeEventType[] = ['meta', 'technical', 'schema']
 const METRICS: ImpactMetricSel[] = ['all', 'clicks', 'impressions', 'ctr', 'position']
 const RANGES: { label: string; days: number }[] = [
   { label: '28d', days: 28 }, { label: '90d', days: 90 },
@@ -167,7 +167,7 @@ export default function ImpactPage() {
           <div>
             <h1 className="text-xl font-semibold text-[#e8eaed] tracking-tight">Optimization Impact</h1>
             <p className="text-[13px] text-[#9aa0a6] mt-1 max-w-2xl">
-              See how your changes - meta, schema, briefs, technical - line up with Search Console
+              See how your changes - meta, schema, technical - line up with Search Console
               performance over time. Markers show <span className="text-[#c8cad0]">when you changed something, not that the change caused the move</span>.
             </p>
           </div>
@@ -500,7 +500,6 @@ function MarkerDetail({
   const color = TYPE_META[event.type].color
   const watchHint: Record<ChangeEvent['type'], string> = {
     meta: 'Watch CTR (a title/description win often lifts CTR without moving position).',
-    brief: 'Watch avg position & clicks (content/intent changes move rankings).',
     technical: 'Watch impressions (canonical/noindex changes eligibility, not CTR).',
     schema: "Affects rich-result eligibility - you won't see this isolated in clicks or impressions.",
   }
@@ -552,7 +551,7 @@ function MarkerDetail({
                 Open page view →
               </button>
             )}
-            {(event.type === 'meta' || event.type === 'brief') && (
+            {event.type === 'meta' && (
               <Link to={`/sites/${siteId}/meta`}
                 className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded bg-white/5 text-[#9aa0a6] hover:text-[#e8eaed] transition-colors">
                 <Wand2 className="size-3" /> Do this again in Meta Manager
