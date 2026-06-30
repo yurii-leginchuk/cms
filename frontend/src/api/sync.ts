@@ -12,6 +12,10 @@ export const syncApi = {
     await apiClient.post(`/api/sites/${siteId}/sync`)
   },
 
+  triggerPage: async (siteId: string, pageId: string): Promise<void> => {
+    await apiClient.post(`/api/sites/${siteId}/sync/page/${pageId}`)
+  },
+
   getStatus: async (siteId: string): Promise<SyncStatusCounts> => {
     const { data } = await apiClient.get<{ data: SyncStatusCounts }>(
       `/api/sites/${siteId}/sync/status`,

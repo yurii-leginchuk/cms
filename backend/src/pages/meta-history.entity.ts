@@ -21,7 +21,15 @@ export class MetaHistory {
   page: Page;
 
   @Column({ length: 20 })
-  field: 'title' | 'description' | 'noindex' | 'canonical';
+  field:
+    | 'title'
+    | 'description'
+    | 'noindex'
+    | 'nofollow'
+    | 'canonical'
+    | 'ogTitle'
+    | 'ogDescription'
+    | 'ogImage';
 
   @Column({ type: 'text', nullable: true })
   oldValue: string | null;

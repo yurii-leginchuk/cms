@@ -49,6 +49,56 @@ class Poirier_Image {
 				],
 			],
 		] );
+
+		// Upload an image FILE into the WP media library (multipart `file`), so the
+		// CMS can offer "upload from your computer → store on WordPress → use its
+		// URL". Returns the new attachment id, canonical URL, and dimensions.
+		register_rest_route( self::NAMESPACE, '/media-upload', [
+			[
+				'methods'             => 'POST',
+				'callback'            => [ self::class, 'handle_upload_media' ],
+				'permission_callback' => [ 'Poirier_API', 'authenticate' ],
+			],
+		] );
+	}
+
+	/**
+	 * Sideload a multipart-uploaded image into the media library and return its
+	 * attachment id + URL + dimensions. PHP populates $_FILES for the multipart
+	 * REST request, so we can hand `file` straight to media_handle_upload().
+	 */
+	public static function handle_upload_media( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$files = $request->get_file_params();
+		if ( empty( $files['file'] ) || ! is_array( $files['file'] ) ) {
+			return new WP_Error( 'no_file', 'No "file" was uploaded.', [ 'status' => 400 ] );
+		}
+
+		$mime = (string) ( $files['file']['type'] ?? '' );
+		if ( strpos( $mime, 'image/' ) !== 0 ) {
+			return new WP_Error( 'bad_type', 'Only image files are allowed.', [ 'status' => 415 ] );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+
+		// No logged-in admin in a REST+API-key context, so skip the form nonce check.
+		$attachment_id = media_handle_upload( 'file', 0, [], [ 'test_form' => false ] );
+		if ( is_wp_error( $attachment_id ) ) {
+			return new WP_Error( 'upload_failed', $attachment_id->get_error_message(), [ 'status' => 500 ] );
+		}
+
+		$url  = (string) wp_get_attachment_url( $attachment_id );
+		$meta = wp_get_attachment_metadata( $attachment_id );
+
+		return new WP_REST_Response( [
+			'success' => true,
+			'id'      => (int) $attachment_id,
+			'url'     => $url,
+			'width'   => isset( $meta['width'] ) ? (int) $meta['width'] : null,
+			'height'  => isset( $meta['height'] ) ? (int) $meta['height'] : null,
+			'mime'    => (string) get_post_mime_type( $attachment_id ),
+		], 200 );
 	}
 
 	/**

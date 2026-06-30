@@ -44,7 +44,12 @@ export function useUpdatePageMeta(siteId: string) {
       pagesApi.update(siteId, pageId, payload),
     onSuccess: (_data, { pageId }) => {
       qc.invalidateQueries({ queryKey: ['pages', siteId] })
+      qc.invalidateQueries({ queryKey: ['page', siteId, pageId] })
       qc.invalidateQueries({ queryKey: ['page-history', pageId] })
+      // Saving meta enqueues a sync job → the site-level pending/failed counts
+      // change. Invalidate the sync status so the Apply button reflects the new
+      // pending state immediately instead of waiting for its idle 30s poll.
+      qc.invalidateQueries({ queryKey: ['sync-status', siteId] })
     },
   })
 }

@@ -1,399 +1,33 @@
-import { useState, useRef, useEffect } from 'react'
-import { Link, useParams, Navigate } from 'react-router-dom'
-import { formatDistanceToNow, format } from 'date-fns'
+import { useState, useRef } from 'react'
+import { Link, useParams, Navigate, useNavigate } from 'react-router-dom'
+import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
 import {
   ChevronRight, ExternalLink, RefreshCw, Search,
   Pencil, ChevronLeft, ChevronRight as ChevronRightIcon,
-  FileText, Clock, ArrowRight, Upload, CheckCircle2, XCircle,
-  EyeOff, Link2, Tag, Sparkles,
+  FileText, ArrowRight, Upload, CheckCircle2, XCircle,
+  EyeOff, Link2, Tag, Image as ImageIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
-} from '@/components/ui/sheet'
 import {
   Table, TableBody, TableCell,
   TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { StatusBadge } from '@/components/StatusBadge'
-import { SerpPreview } from '@/components/SerpPreview'
 import { WpPluginStatus } from '@/components/WpPluginStatus'
-import { AiReviewDialog } from '@/components/AiReviewDialog'
 import { useSite } from '@/hooks/useSites'
-import { usePages, usePageHistory, useUpdatePageMeta, useGenerateMeta } from '@/hooks/usePages'
+import { usePages } from '@/hooks/usePages'
 import { useSyncStatus, useTriggerSync } from '@/hooks/useSync'
-import type { Page, MetaHistoryEntry, PageSyncStatus } from '@/api/pages'
+import type { PageSyncStatus } from '@/api/pages'
 
 const PAGE_LIMIT = 50
-const TITLE_LIMIT = 60
-const DESC_LIMIT = 160
 
 function trunc(s: string | null | undefined, max: number) {
   if (!s) return null
   return s.length > max ? s.slice(0, max - 1) + '…' : s
-}
-
-function relativeTime(date: string | null) {
-  if (!date) return 'Never'
-  return formatDistanceToNow(new Date(date), { addSuffix: true })
-}
-
-/* ──────────────────────────────── History Timeline ─────────────────────────── */
-
-const FIELD_STYLES: Record<string, { color: string; bg: string; label: string }> = {
-  title: { color: 'text-[#4e8af4]', bg: 'bg-[#4e8af4]/15', label: 'Title' },
-  description: { color: 'text-violet-400', bg: 'bg-violet-400/15', label: 'Description' },
-  noindex: { color: 'text-amber-400', bg: 'bg-amber-400/15', label: 'Noindex' },
-  canonical: { color: 'text-emerald-400', bg: 'bg-emerald-400/15', label: 'Canonical' },
-}
-
-function HistoryTimeline({ entries, isLoading }: { entries: MetaHistoryEntry[]; isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="flex gap-3">
-            <Skeleton className="size-6 rounded-full bg-white/5 flex-shrink-0 mt-0.5" />
-            <div className="space-y-1.5 flex-1">
-              <Skeleton className="h-3 w-20 bg-white/5 rounded" />
-              <Skeleton className="h-3 w-full bg-white/5 rounded" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (entries.length === 0) {
-    return <p className="text-[12px] text-[#9aa0a6] italic py-2">No changes yet</p>
-  }
-
-  return (
-    <div className="space-y-0">
-      {entries.map((entry, i) => {
-        const style = FIELD_STYLES[entry.field] ?? FIELD_STYLES.title
-        return (
-          <div key={entry.id} className="flex gap-3 group">
-            <div className="flex flex-col items-center flex-shrink-0">
-              <div className={`size-2 rounded-full mt-1.5 flex-shrink-0 ${style.color.replace('text-', 'bg-')}`} />
-              {i < entries.length - 1 && <div className="w-px flex-1 bg-white/8 mt-1" />}
-            </div>
-            <div className="pb-4 flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${style.bg} ${style.color}`}>
-                  {style.label}
-                </span>
-                <span className="text-[11px] text-[#9aa0a6]">{relativeTime(entry.createdAt)}</span>
-                <span className="text-[10px] text-[#9aa0a6]/40 ml-auto">
-                  {format(new Date(entry.createdAt), 'MMM d, HH:mm')}
-                </span>
-              </div>
-              <div className="space-y-1">
-                {entry.oldValue && (
-                  <div className="flex items-start gap-1.5">
-                    <span className="text-[10px] text-[#9aa0a6]/50 uppercase mt-0.5 w-5 flex-shrink-0">was</span>
-                    <p className="text-[12px] text-[#9aa0a6] line-through leading-snug break-words min-w-0">
-                      {trunc(entry.oldValue, 80)}
-                    </p>
-                  </div>
-                )}
-                <div className="flex items-start gap-1.5">
-                  <span className="text-[10px] text-emerald-400/70 uppercase mt-0.5 w-5 flex-shrink-0">now</span>
-                  <p className="text-[12px] text-[#e8eaed] leading-snug break-words min-w-0">
-                    {entry.newValue ? trunc(entry.newValue, 80) : <span className="italic text-[#9aa0a6]">cleared</span>}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-/* ──────────────────────────────── Edit Meta Sheet ──────────────────────────── */
-
-interface EditSheetProps {
-  page: Page | null
-  siteId: string
-  siteFavicon?: string | null
-  onClose: () => void
-}
-
-function EditMetaSheet({ page, siteId, siteFavicon, onClose }: EditSheetProps) {
-  const [title, setTitle] = useState('')
-  const [desc, setDesc] = useState('')
-  const [noindex, setNoindex] = useState(false)
-  const [canonical, setCanonical] = useState('')
-  const initialRef = useRef({ title: '', desc: '', noindex: false, canonical: '' })
-  const [aiReview, setAiReview] = useState<{ metaTitle: string | null; metaDescription: string | null; tokensUsed: number } | null>(null)
-  const update = useUpdatePageMeta(siteId)
-  const generateMeta = useGenerateMeta(siteId)
-  const { data: history = [], isLoading: historyLoading } = usePageHistory(siteId, page?.id ?? null)
-
-  useEffect(() => {
-    if (page) {
-      const t = page.customMetaTitle || page.metaTitle || ''
-      const d = page.customMetaDescription || page.metaDescription || ''
-      const n = page.noindex
-      const c = page.canonical || ''
-      setTitle(t)
-      setDesc(d)
-      setNoindex(n)
-      setCanonical(c)
-      initialRef.current = { title: t, desc: d, noindex: n, canonical: c }
-    }
-  }, [page?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleGenerate() {
-    if (!page) return
-    try {
-      const result = await generateMeta.mutateAsync({ pageId: page.id })
-      setAiReview(result)
-    } catch (err: unknown) {
-      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(message ?? "Couldn't generate meta. Try again in a moment.")
-    }
-  }
-
-  function handleApplyAi(newTitle: string | null, newDesc: string | null) {
-    if (newTitle !== null) setTitle(newTitle)
-    if (newDesc !== null) setDesc(newDesc)
-    toast.success("Applied to the draft - review and save when you're ready")
-  }
-
-  async function handleSave() {
-    if (!page) return
-    try {
-      const payload: Parameters<typeof update.mutateAsync>[0]['payload'] = {}
-      if ((title.trim() || null) !== (initialRef.current.title.trim() || null))
-        payload.customMetaTitle = title.trim() || null
-      if ((desc.trim() || null) !== (initialRef.current.desc.trim() || null))
-        payload.customMetaDescription = desc.trim() || null
-      if (noindex !== initialRef.current.noindex)
-        payload.noindex = noindex
-      if ((canonical.trim() || null) !== (initialRef.current.canonical.trim() || null))
-        payload.canonical = canonical.trim() || null
-
-      if (Object.keys(payload).length === 0) { onClose(); return }
-      await update.mutateAsync({ pageId: page.id, payload })
-      toast.success('Saved - queued to push to WordPress')
-      onClose()
-    } catch {
-      toast.error('Failed to save meta')
-    }
-  }
-
-  const titleOver = title.length > TITLE_LIMIT
-  const descOver = desc.length > DESC_LIMIT
-
-  return (
-    <Sheet open={!!page} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-[660px] sm:max-w-[660px] bg-[#1a1d27] border-l border-white/8 flex flex-col p-0"
-      >
-        <SheetHeader className="px-6 py-4 border-b border-white/8 flex-shrink-0">
-          <SheetTitle className="text-[#e8eaed] text-[15px] font-semibold">Edit Meta</SheetTitle>
-          {page && (
-            <a
-              href={page.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[12px] text-[#9aa0a6] hover:text-[#4e8af4] transition-colors mt-0.5 w-fit"
-            >
-              <span className="truncate max-w-[400px]">{page.url}</span>
-              <ExternalLink className="size-3 flex-shrink-0" />
-            </a>
-          )}
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-6 py-5 space-y-5">
-            {/* AI Generate */}
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={generateMeta.isPending}
-              className="flex items-center gap-2 bg-[#4e8af4]/10 border border-[#4e8af4]/20 text-[#4e8af4] hover:bg-[#4e8af4]/20 h-9 px-3 text-[13px] rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {generateMeta.isPending ? (
-                <><RefreshCw className="size-3.5 animate-spin" />Generating…</>
-              ) : (
-                <><Sparkles className="size-3.5" />Generate with AI</>
-              )}
-            </button>
-
-            {/* Meta Title */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest">
-                  Meta Title
-                </Label>
-                <span className={`text-[11px] tabular-nums ${titleOver ? 'text-amber-400' : 'text-[#9aa0a6]'}`}>
-                  {title.length} / {TITLE_LIMIT}
-                </span>
-              </div>
-              <textarea
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Write a meta title - aim for 50-60 characters"
-                rows={2}
-                className="w-full bg-[#0f1117] border border-white/8 rounded-lg px-3 py-2.5 text-sm text-[#e8eaed] placeholder:text-[#9aa0a6]/40 resize-none focus:outline-none focus:ring-1 focus:ring-[#4e8af4]/50 focus:border-[#4e8af4]/40 transition-colors"
-              />
-              {page?.metaTitle && (
-                <p className="text-[11px] text-[#9aa0a6]">
-                  Scraped: <span className="text-[#e8eaed]/60">{trunc(page.metaTitle, 90)}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Meta Description */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest">
-                  Meta Description
-                </Label>
-                <span className={`text-[11px] tabular-nums ${descOver ? 'text-amber-400' : 'text-[#9aa0a6]'}`}>
-                  {desc.length} / {DESC_LIMIT}
-                </span>
-              </div>
-              <textarea
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Write a meta description - aim for 120-160 characters"
-                rows={4}
-                className="w-full bg-[#0f1117] border border-white/8 rounded-lg px-3 py-2.5 text-sm text-[#e8eaed] placeholder:text-[#9aa0a6]/40 resize-none focus:outline-none focus:ring-1 focus:ring-[#4e8af4]/50 focus:border-[#4e8af4]/40 transition-colors"
-              />
-              {page?.metaDescription && (
-                <p className="text-[11px] text-[#9aa0a6]">
-                  Scraped: <span className="text-[#e8eaed]/60">{trunc(page.metaDescription, 110)}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Indexing + Canonical row */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* Noindex toggle */}
-              <div className="space-y-2">
-                <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest">
-                  Indexing
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setNoindex((v) => !v)}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-[13px] font-medium transition-all ${
-                    noindex
-                      ? 'bg-amber-400/10 border-amber-400/30 text-amber-400 hover:bg-amber-400/15'
-                      : 'bg-[#0f1117] border-white/8 text-[#e8eaed]/70 hover:bg-white/5'
-                  }`}
-                >
-                  <EyeOff className="size-3.5 flex-shrink-0" />
-                  {noindex ? 'noindex' : 'index'}
-                </button>
-                <p className="text-[10px] text-[#9aa0a6]/50 leading-relaxed">
-                  {noindex
-                    ? 'Search engines will be told not to index this page'
-                    : 'Open to search engines'}
-                </p>
-              </div>
-
-              {/* Scraped robots */}
-              {page && (
-                <div className="space-y-2">
-                  <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest">
-                    Scraped robots
-                  </Label>
-                  <div className="px-3 py-2.5 rounded-lg bg-[#0f1117] border border-white/8 text-[13px] text-[#e8eaed]/40 italic">
-                    Not scraped yet
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Canonical */}
-            <div className="space-y-2">
-              <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest flex items-center gap-1.5">
-                <Link2 className="size-3" />
-                Canonical URL
-              </Label>
-              <input
-                type="url"
-                value={canonical}
-                onChange={(e) => setCanonical(e.target.value)}
-                placeholder={page?.url ?? 'https://…'}
-                className="w-full bg-[#0f1117] border border-white/8 rounded-lg px-3 py-2.5 text-sm text-[#e8eaed] placeholder:text-[#9aa0a6]/40 font-mono focus:outline-none focus:ring-1 focus:ring-[#4e8af4]/50 focus:border-[#4e8af4]/40 transition-colors"
-              />
-              <p className="text-[10px] text-[#9aa0a6]/50 leading-relaxed">
-                Leave empty to use the page URL as canonical.
-              </p>
-            </div>
-
-            {/* SERP Preview */}
-            {page && (
-              <SerpPreview title={title} description={desc} url={canonical || page.url} favicon={siteFavicon} />
-            )}
-          </div>
-
-          {/* History */}
-          <Separator className="bg-white/8" />
-          <div className="px-6 py-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="size-3.5 text-[#9aa0a6]" />
-              <h3 className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0a6]">
-                Change History
-              </h3>
-              {history.length > 0 && (
-                <span className="text-[10px] bg-white/8 text-[#9aa0a6] px-1.5 py-0.5 rounded-full ml-auto">
-                  {history.length}
-                </span>
-              )}
-            </div>
-            <HistoryTimeline entries={history} isLoading={historyLoading} />
-          </div>
-        </div>
-
-        <SheetFooter className="px-6 py-5 border-t border-white/8 flex-shrink-0 flex gap-3">
-          <Button
-            variant="ghost"
-            onClick={onClose}
-            className="flex-1 h-10 text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-white/5"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={update.isPending}
-            className="flex-1 h-10 bg-[#4e8af4] hover:bg-[#4e8af4]/90 text-white"
-          >
-            {update.isPending
-              ? <><RefreshCw className="size-4 mr-2 animate-spin" />Saving…</>
-              : 'Save Changes'
-            }
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-
-      {aiReview && page && (
-        <AiReviewDialog
-          open={!!aiReview}
-          onClose={() => setAiReview(null)}
-          onApply={handleApplyAi}
-          current={{ title, desc }}
-          generated={aiReview}
-          pageUrl={page.url}
-          siteFavicon={siteFavicon}
-        />
-      )}
-    </Sheet>
-  )
 }
 
 /* ──────────────────────────────── Sync Status Cell ─────────────────────────── */
@@ -443,7 +77,7 @@ function SkeletonRows() {
     <>
       {[0, 1, 2, 3, 4].map((i) => (
         <TableRow key={i} className="border-white/8 hover:bg-transparent">
-          {[220, 180, 180, 80, 120, 80, 60].map((w, j) => (
+          {[220, 180, 180, 80, 120, 60, 80, 60].map((w, j) => (
             <TableCell key={j}>
               <Skeleton className="h-4 bg-white/5 rounded" style={{ width: w }} />
             </TableCell>
@@ -475,13 +109,13 @@ const SORT_OPTIONS = [
 
 export default function SiteMetaPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [currentPage, setCurrentPage] = useState(1)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sort, setSort] = useState<string>(
     () => localStorage.getItem('meta-sort') ?? 'url_asc',
   )
-  const [editPage, setEditPage] = useState<Page | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: site, isLoading: siteLoading } = useSite(id!)
@@ -636,6 +270,9 @@ export default function SiteMetaPage() {
                   <span className="flex items-center gap-1.5"><Link2 className="size-3" />Canonical</span>
                 </TableHead>
                 <TableHead className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0a6] h-10">
+                  <span className="flex items-center gap-1.5"><ImageIcon className="size-3" />OG</span>
+                </TableHead>
+                <TableHead className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0a6] h-10">
                   <span className="flex items-center gap-1.5"><Upload className="size-3" />WP Sync</span>
                 </TableHead>
                 <TableHead className="h-10" />
@@ -646,7 +283,7 @@ export default function SiteMetaPage() {
                 <SkeletonRows />
               ) : pages.length === 0 ? (
                 <TableRow className="border-white/8 hover:bg-transparent">
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <div className="flex flex-col items-center justify-center py-14 gap-3">
                       <div className="size-12 rounded-xl bg-[#1a1d27] border border-white/8 flex items-center justify-center">
                         <FileText className="size-6 text-[#9aa0a6]" />
@@ -663,7 +300,8 @@ export default function SiteMetaPage() {
                 pages.map((page) => (
                   <TableRow
                     key={page.id}
-                    className={`border-white/8 transition-colors ${page.isTransactional ? 'bg-[#4e8af4]/[0.05] hover:bg-[#4e8af4]/[0.08]' : 'hover:bg-white/[0.02]'}`}
+                    onClick={() => navigate(`/sites/${id}/meta/${page.id}`)}
+                    className={`border-white/8 transition-colors cursor-pointer ${page.isTransactional ? 'bg-[#4e8af4]/[0.05] hover:bg-[#4e8af4]/[0.08]' : 'hover:bg-white/[0.02]'}`}
                   >
                     {/* URL */}
                     <TableCell className="max-w-[220px]">
@@ -671,6 +309,7 @@ export default function SiteMetaPage() {
                         href={page.url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-1 text-[13px] text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
                       >
                         <span className="truncate max-w-[200px]" title={page.url}>
@@ -739,6 +378,11 @@ export default function SiteMetaPage() {
                       ) : (
                         <span className="text-[#9aa0a6]/30 text-[13px]">index</span>
                       )}
+                      {page.nofollow && (
+                        <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-400/10 text-amber-400 border border-amber-400/25">
+                          nofollow
+                        </span>
+                      )}
                     </TableCell>
 
                     {/* Canonical */}
@@ -748,6 +392,7 @@ export default function SiteMetaPage() {
                           href={page.canonical}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="flex items-center gap-1 text-[12px] text-emerald-400 hover:text-emerald-300 transition-colors"
                           title={page.canonical}
                         >
@@ -756,6 +401,18 @@ export default function SiteMetaPage() {
                             {page.canonical.replace(/^https?:\/\/[^/]+/, '') || '/'}
                           </span>
                         </a>
+                      ) : (
+                        <span className="text-[#9aa0a6]/30 text-[13px]">-</span>
+                      )}
+                    </TableCell>
+
+                    {/* OG */}
+                    <TableCell>
+                      {page.ogImage || page.ogTitle || page.ogDescription ? (
+                        <span className="inline-flex items-center gap-1 text-[12px] text-sky-400" title="Open Graph override set">
+                          <ImageIcon className="size-3" />
+                          {page.ogImage ? 'image' : 'text'}
+                        </span>
                       ) : (
                         <span className="text-[#9aa0a6]/30 text-[13px]">-</span>
                       )}
@@ -775,7 +432,7 @@ export default function SiteMetaPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setEditPage(page)}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/sites/${id}/meta/${page.id}`) }}
                         className="h-7 px-2.5 text-[13px] text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-white/5 gap-1.5"
                       >
                         <Pencil className="size-3" />
@@ -822,13 +479,6 @@ export default function SiteMetaPage() {
           </div>
         )}
       </div>
-
-      <EditMetaSheet
-        page={editPage}
-        siteId={id!}
-        siteFavicon={site?.favicon}
-        onClose={() => setEditPage(null)}
-      />
     </div>
   )
 }

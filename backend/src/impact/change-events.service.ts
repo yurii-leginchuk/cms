@@ -14,6 +14,16 @@ function metaGroupKey(pageId: string, createdAt: Date): string {
   return `${pageId}@${createdAt.toISOString().slice(0, 19)}`;
 }
 
+/** Human labels for standalone technical meta_history fields. */
+const TECHNICAL_FIELD_LABELS: Record<string, string> = {
+  noindex: 'Robots index',
+  nofollow: 'Robots nofollow',
+  canonical: 'Canonical',
+  ogTitle: 'OG title',
+  ogDescription: 'OG description',
+  ogImage: 'OG image',
+};
+
 @Injectable()
 export class ChangeEventsService {
   constructor(
@@ -69,7 +79,7 @@ export class ChangeEventsService {
           ts: row.createdAt.toISOString(),
           day: toGscDay(row.createdAt),
           precision: 'timestamp',
-          summary: `${row.field === 'noindex' ? 'Noindex' : 'Canonical'} changed`,
+          summary: `${TECHNICAL_FIELD_LABELS[row.field] ?? 'Meta'} changed`,
           before: row.oldValue,
           after: row.newValue,
           measurable: true,

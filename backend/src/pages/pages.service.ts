@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as cheerio from 'cheerio';
-import { Page } from './page.entity';
+import { Page, IndexDirective } from './page.entity';
 import { MetaHistory } from './meta-history.entity';
 import { UpdatePageMetaDto } from './dto/update-page-meta.dto';
 import { SyncService } from '../sync/sync.service';
@@ -83,8 +83,11 @@ export class PagesService {
       where: { id },
       select: [
         'id', 'url', 'metaTitle', 'customMetaTitle', 'metaDescription',
-        'customMetaDescription', 'cleanContent', 'h1Text', 'noindex', 'canonical',
-        'isTransactional', 'syncStatus', 'lastScrapedAt',
+        'customMetaDescription', 'cleanContent', 'h1Text', 'noindex',
+        'indexDirective', 'nofollow', 'canonical',
+        'ogTitle', 'ogDescription', 'ogImage', 'ogImageId',
+        'isTransactional', 'syncStatus', 'syncError', 'syncAppliedAt',
+        'lastScrapedAt',
       ],
     });
     if (!page) throw new NotFoundException(`Page ${id} not found`);
@@ -96,6 +99,20 @@ export class PagesService {
 
     const entries: Partial<MetaHistory>[] = [];
 
+    // ── Resolve the robots index tri-state. indexDirective wins; the legacy
+    //    boolean `noindex` is accepted (agent/chat) and mirrored both ways. ──
+    let nextDirective = page.indexDirective;
+    if (dto.indexDirective !== undefined) {
+      nextDirective = dto.indexDirective;
+    } else if (dto.noindex !== undefined) {
+      nextDirective = dto.noindex
+        ? IndexDirective.NOINDEX
+        : IndexDirective.DEFAULT;
+    }
+    const nextNoindex = nextDirective === IndexDirective.NOINDEX;
+
+    const pushString = (v: string | null | undefined) => (v ? v : null);
+
     if (
       dto.customMetaTitle !== undefined &&
       dto.customMetaTitle !== page.customMetaTitle
@@ -104,7 +121,7 @@ export class PagesService {
         pageId: page.id,
         field: 'title',
         oldValue: page.customMetaTitle,
-        newValue: dto.customMetaTitle || null,
+        newValue: pushString(dto.customMetaTitle),
       });
     }
 
@@ -116,25 +133,64 @@ export class PagesService {
         pageId: page.id,
         field: 'description',
         oldValue: page.customMetaDescription,
-        newValue: dto.customMetaDescription || null,
+        newValue: pushString(dto.customMetaDescription),
       });
     }
 
-    if (dto.noindex !== undefined && dto.noindex !== page.noindex) {
+    if (nextDirective !== page.indexDirective) {
       entries.push({
         pageId: page.id,
         field: 'noindex',
-        oldValue: String(page.noindex),
-        newValue: String(dto.noindex),
+        oldValue: page.indexDirective,
+        newValue: nextDirective,
       });
     }
 
-    if (dto.canonical !== undefined && dto.canonical !== page.canonical) {
+    if (dto.nofollow !== undefined && dto.nofollow !== page.nofollow) {
+      entries.push({
+        pageId: page.id,
+        field: 'nofollow',
+        oldValue: String(page.nofollow),
+        newValue: String(dto.nofollow),
+      });
+    }
+
+    if (dto.canonical !== undefined && (dto.canonical || null) !== page.canonical) {
       entries.push({
         pageId: page.id,
         field: 'canonical',
         oldValue: page.canonical,
-        newValue: dto.canonical || null,
+        newValue: pushString(dto.canonical),
+      });
+    }
+
+    if (dto.ogTitle !== undefined && (dto.ogTitle || null) !== page.ogTitle) {
+      entries.push({
+        pageId: page.id,
+        field: 'ogTitle',
+        oldValue: page.ogTitle,
+        newValue: pushString(dto.ogTitle),
+      });
+    }
+
+    if (
+      dto.ogDescription !== undefined &&
+      (dto.ogDescription || null) !== page.ogDescription
+    ) {
+      entries.push({
+        pageId: page.id,
+        field: 'ogDescription',
+        oldValue: page.ogDescription,
+        newValue: pushString(dto.ogDescription),
+      });
+    }
+
+    if (dto.ogImage !== undefined && (dto.ogImage || null) !== page.ogImage) {
+      entries.push({
+        pageId: page.id,
+        field: 'ogImage',
+        oldValue: page.ogImage,
+        newValue: pushString(dto.ogImage),
       });
     }
 
@@ -147,17 +203,37 @@ export class PagesService {
       (dto.customMetaDescription !== undefined &&
         dto.customMetaDescription !== page.customMetaDescription);
 
+    // Any field that gets pushed to WordPress should trigger a sync, not just
+    // the title/description content.
+    const pushableChanged =
+      metaChanged ||
+      nextDirective !== page.indexDirective ||
+      (dto.nofollow !== undefined && dto.nofollow !== page.nofollow) ||
+      (dto.canonical !== undefined && (dto.canonical || null) !== page.canonical) ||
+      (dto.ogTitle !== undefined && (dto.ogTitle || null) !== page.ogTitle) ||
+      (dto.ogDescription !== undefined &&
+        (dto.ogDescription || null) !== page.ogDescription) ||
+      (dto.ogImage !== undefined && (dto.ogImage || null) !== page.ogImage) ||
+      (dto.ogImageId !== undefined && (dto.ogImageId ?? null) !== page.ogImageId);
+
     Object.assign(page, {
       customMetaTitle: dto.customMetaTitle ?? page.customMetaTitle,
       customMetaDescription: dto.customMetaDescription ?? page.customMetaDescription,
       ...(dto.isTransactional !== undefined && { isTransactional: dto.isTransactional }),
-      ...(dto.noindex !== undefined && { noindex: dto.noindex }),
+      indexDirective: nextDirective,
+      noindex: nextNoindex,
+      ...(dto.nofollow !== undefined && { nofollow: dto.nofollow }),
       canonical: dto.canonical !== undefined ? (dto.canonical || null) : page.canonical,
+      ogTitle: dto.ogTitle !== undefined ? (dto.ogTitle || null) : page.ogTitle,
+      ogDescription:
+        dto.ogDescription !== undefined ? (dto.ogDescription || null) : page.ogDescription,
+      ogImage: dto.ogImage !== undefined ? (dto.ogImage || null) : page.ogImage,
+      ogImageId: dto.ogImageId !== undefined ? (dto.ogImageId ?? null) : page.ogImageId,
     });
     const saved = await this.pageRepo.save(page);
 
-    // Enqueue a sync job whenever meta content actually changed (skip when caller opts out)
-    if (metaChanged && !dto.skipSync) {
+    // Enqueue a sync job whenever a WP-pushable field changed (skip when caller opts out)
+    if (pushableChanged && !dto.skipSync) {
       await this.syncService.enqueue(page.siteId, page.id);
     }
 

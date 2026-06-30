@@ -73,6 +73,12 @@ export function useSetImageAlt(siteId: string) {
   })
 }
 
+export function useUploadOgImage(siteId: string) {
+  return useMutation({
+    mutationFn: (file: File) => imagesApi.uploadOgImage(siteId, file),
+  })
+}
+
 export function useApproveImage(siteId: string) {
   const invalidate = useInvalidateImages(siteId)
   return useMutation({

@@ -26,3 +26,16 @@ export function useTriggerSync(siteId: string) {
     },
   })
 }
+
+/** Push a single page now (per-page Apply on the meta editor). */
+export function useTriggerPageSync(siteId: string, pageId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => syncApi.triggerPage(siteId, pageId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sync-status', siteId] })
+      qc.invalidateQueries({ queryKey: ['pages', siteId] })
+      qc.invalidateQueries({ queryKey: ['page', siteId, pageId] })
+    },
+  })
+}
