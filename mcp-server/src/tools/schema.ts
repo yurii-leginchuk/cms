@@ -144,7 +144,17 @@ export function registerSchemaTools(server: McpServer, client: CmsClient) {
         const res = (await client.post(`/sites/${siteId}/pages/_/schemas/validate`, {
           jsonld: coerceJsonld(args.jsonld),
         })) as any;
-        const valid = res?.ok && res?.validity === 'valid';
+        // Three-state verdict: a recognised schema carrying only warnings is
+        // still VALID (with warnings) — not INVALID. Parse errors are INVALID.
+        const validity: string = res?.parseError
+          ? 'invalid'
+          : (res?.validity ?? (res?.ok ? 'valid' : 'invalid'));
+        const label =
+          validity === 'valid'
+            ? 'VALID'
+            : validity === 'warnings'
+              ? 'VALID (with warnings)'
+              : 'INVALID';
         const issues: string[] = [];
         if (res?.parseError) issues.push(`parseError: ${res.parseError}`);
         for (const n of res?.nodes ?? []) {
@@ -154,7 +164,7 @@ export function registerSchemaTools(server: McpServer, client: CmsClient) {
         }
         const types = (res?.nodes ?? []).map((n: any) => `${n.type}(${n.validity})`).join(', ');
         return ok(
-          `Validation: ${valid ? 'VALID' : 'INVALID'}${types ? ` — nodes: ${types}` : ''}${
+          `Validation: ${label}${types ? ` — nodes: ${types}` : ''}${
             issues.length ? `\nIssues:\n- ${issues.slice(0, 20).join('\n- ')}` : ''
           }`,
           { validation: res },
