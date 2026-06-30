@@ -43,6 +43,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cms_password}
       POSTGRES_DB: ${POSTGRES_DB:-cms_db}
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      MCP_API_KEY: ${MCP_API_KEY:-}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT:-6379}
     volumes:
@@ -62,6 +63,7 @@ services:
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_CMS_API_KEY: ${VITE_CMS_API_KEY:-}
     ports:
       - "8080:80"
     depends_on:

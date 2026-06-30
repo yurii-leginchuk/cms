@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
@@ -25,6 +26,7 @@ import { SchemaModule } from './schema/schema.module';
 import { ImageModule } from './images/image.module';
 import { ImpactModule } from './impact/impact.module';
 import { McpChangeModule } from './mcp-changes/mcp-change.module';
+import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
   imports: [
@@ -61,6 +63,6 @@ import { McpChangeModule } from './mcp-changes/mcp-change.module';
     McpChangeModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ApiKeyGuard }],
 })
 export class AppModule {}

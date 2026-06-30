@@ -34,10 +34,19 @@ function check(name: string, condition: boolean, detail = '') {
 }
 
 // Minimal REST helper that unwraps the { data } envelope (the human side).
+// Sends the API key (when set) so the test's human-side calls pass the
+// backend's API-key gate, mirroring what the MCP client does.
+const API_KEY = process.env.CMS_API_KEY;
 async function api(method: string, path: string, body?: unknown): Promise<any> {
+  const headers: Record<string, string> = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (API_KEY) {
+    headers.Authorization = `Bearer ${API_KEY}`;
+    headers['X-API-Key'] = API_KEY;
+  }
   const res = await fetch(`${BASE}/api${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
