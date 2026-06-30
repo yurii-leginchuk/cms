@@ -21,5 +21,6 @@ import { OptimizationEffectsModule } from '../optimization-effects/optimization-
   ],
   controllers: [PagesController],
   providers: [PagesService],
+  exports: [PagesService],
 })
 export class PagesModule {}

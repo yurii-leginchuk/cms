@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useParams, Navigate } from 'react-router-dom'
+import { Link, useParams, Navigate, useSearchParams } from 'react-router-dom'
 import { formatDistanceToNow, format } from 'date-fns'
 import { toast } from 'sonner'
 import {
@@ -22,7 +22,9 @@ import { usePages } from '@/hooks/usePages'
 import { useSyncStatus, useTriggerSync } from '@/hooks/useSync'
 import { useEmbeddingStats, useGenerateEmbeddings } from '@/hooks/useEmbedding'
 import { Label } from '@/components/ui/label'
+import { McpChangesPanel } from '@/components/McpChangesPanel'
 import type { Site } from '@/api/sites'
+import type { McpChangeModule } from '@/api/mcpChanges'
 
 const PAGE_LIMIT = 50
 
@@ -184,6 +186,8 @@ function nextScheduledScan(): string {
 
 export default function SiteDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  const focusModule = (searchParams.get('module') as McpChangeModule | null) ?? null
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { data: site, isLoading: siteLoading } = useSite(id!)
@@ -365,6 +369,9 @@ export default function SiteDetailPage() {
             subtitle={nextScheduledScan()}
           />
         </div>
+
+        {/* Pending AI changes (human approval gate for MCP-originated edits) */}
+        <McpChangesPanel siteId={id} focusModule={focusModule} />
 
         {/* Pages entry point */}
         <Link

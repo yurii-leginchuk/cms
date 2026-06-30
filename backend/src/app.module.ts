@@ -24,6 +24,7 @@ import { OptimizationEffectsModule } from './optimization-effects/optimization-e
 import { SchemaModule } from './schema/schema.module';
 import { ImageModule } from './images/image.module';
 import { ImpactModule } from './impact/impact.module';
+import { McpChangeModule } from './mcp-changes/mcp-change.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ImpactModule } from './impact/impact.module';
     SchemaModule,
     ImageModule,
     ImpactModule,
+    McpChangeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
