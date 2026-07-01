@@ -29,6 +29,7 @@ import { ImpactModule } from './impact/impact.module';
 import { McpChangeModule } from './mcp-changes/mcp-change.module';
 import { CrawlModule } from './crawl/crawl.module';
 import { AsanaModule } from './asana/asana.module';
+import { Ga4Module } from './ga4/ga4.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
@@ -67,6 +68,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     McpChangeModule,
     CrawlModule,
     AsanaModule,
+    Ga4Module,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ApiKeyGuard }],

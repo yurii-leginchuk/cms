@@ -17,16 +17,37 @@ import {
 import { EffectCard } from '@/components/impact/EffectCard'
 import { ChangesTable } from '@/components/impact/ChangesTable'
 import {
-  ImpactTimeline, METRIC_SEL_LABELS, type ImpactMetricSel,
+  ImpactTimeline, METRIC_SEL_LABELS, GA4_METRICS, isGa4Metric, type ImpactMetricSel, type ImpactMetric,
 } from '@/components/impact/ImpactTimeline'
+import { useGa4Status, useGa4Series } from '@/hooks/useGa4'
+import type { SeriesPoint } from '@/api/impact'
+import type { Ga4SeriesPoint } from '@/api/ga4'
 import { ClusterSheet } from '@/components/impact/ClusterSheet'
 import { AddEventDialog, type EditingAnnotation } from '@/components/impact/AddEventDialog'
 import { CATEGORY_META, CATEGORY_ORDER, clusterEvents } from '@/components/impact/cluster'
+import { Ga4OutcomesCard } from '@/components/impact/Ga4OutcomesCard'
 import { ImpactQueriesPanel } from '@/components/impact/ImpactQueriesPanel'
 import type { ChangeEvent, ChangeEventCategory } from '@/api/impact'
 
 const ALL_CATEGORIES: ChangeEventCategory[] = CATEGORY_ORDER
-const METRICS: ImpactMetricSel[] = ['all', 'clicks', 'impressions', 'ctr', 'position']
+const GSC_METRICS: ImpactMetricSel[] = ['all', 'clicks', 'impressions', 'ctr', 'position']
+
+/** Merge GA4 organic daily metrics onto the GSC series, keyed by date (0-filled). */
+function mergeGa4Series(gsc: SeriesPoint[] | undefined, ga4: Ga4SeriesPoint[] | undefined): SeriesPoint[] {
+  if (!gsc) return []
+  if (!ga4?.length) return gsc
+  const byDate = new Map(ga4.map((p) => [p.date, p]))
+  return gsc.map((p) => {
+    const g = byDate.get(p.date)
+    return {
+      ...p,
+      sessions: g?.sessions ?? 0,
+      conversions: g?.conversions ?? 0,
+      revenue: g?.revenue ?? 0,
+      users: g?.users ?? 0,
+    }
+  })
+}
 const RANGES: { label: string; days: number }[] = [
   { label: '28d', days: 28 }, { label: '90d', days: 90 },
   { label: '6mo', days: 182 }, { label: '12mo', days: 365 },
@@ -122,6 +143,26 @@ export default function ImpactPage() {
     { scope, pageUrl: selectedPage?.url, from: daysAgoStr(rangeDays + shift), to: daysAgoStr(shift), brand },
     compare !== 'none' && metric !== 'all',
   )
+
+  // GA4 organic outcomes merged onto the SAME timeline (site-level, global scope).
+  const ga4Status = useGa4Status(siteId)
+  const ga4Enabled = ga4Status.data?.connected === true && scope === 'global'
+  const ga4Series = useGa4Series(siteId, from, to, ga4Enabled)
+  const ga4Available = ga4Enabled && (ga4Series.data?.length ?? 0) > 0
+  const mergedPoints = useMemo(
+    () => mergeGa4Series(series.data?.points, ga4Available ? ga4Series.data : undefined),
+    [series.data, ga4Series.data, ga4Available],
+  )
+  const ga4Metrics = useMemo<ImpactMetric[]>(() => {
+    if (!ga4Available) return []
+    const hasRevenue = (ga4Series.data ?? []).some((p) => p.revenue > 0)
+    return hasRevenue ? GA4_METRICS : GA4_METRICS.filter((m) => m !== 'revenue')
+  }, [ga4Available, ga4Series.data])
+  const metricOptions: ImpactMetricSel[] = [...GSC_METRICS, ...ga4Metrics]
+  // If a GA4 metric is selected but GA4 becomes unavailable (e.g. per-page), fall back.
+  useEffect(() => {
+    if (metric !== 'all' && isGa4Metric(metric as ImpactMetric) && !ga4Available) setMetric('all')
+  }, [metric, ga4Available])
 
   const visibleEvents = useMemo(
     () => events.filter((e) => e.day >= from && e.day <= to && enabled.includes(e.category)),
@@ -232,7 +273,7 @@ export default function ImpactPage() {
         <div className="px-8 py-6 space-y-5">
           {/* ── Controls ──────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <Segmented label="Metric" options={METRICS.map((m) => ({ v: m, label: METRIC_SEL_LABELS[m] }))}
+            <Segmented label="Metric" options={metricOptions.map((m) => ({ v: m, label: METRIC_SEL_LABELS[m] }))}
               value={metric} onChange={(v) => setMetric(v as ImpactMetricSel)} />
             <Segmented label="Range" options={RANGES.map((r) => ({ v: String(r.days), label: r.label }))}
               value={String(rangeDays)} onChange={(v) => setRangeDays(Number(v))} />
@@ -305,7 +346,7 @@ export default function ImpactPage() {
               </div>
             ) : (
               <ImpactTimeline
-                points={series.data.points}
+                points={mergedPoints}
                 events={visibleEvents}
                 metric={metric}
                 scope={scope}
@@ -315,6 +356,7 @@ export default function ImpactPage() {
                 hoveredDay={hoveredDay}
                 smooth={smooth}
                 comparePoints={compare !== 'none' ? compareSeries.data?.points : undefined}
+                ga4Metrics={ga4Metrics}
               />
             )}
             {series.data && series.data.points.length > 0 && visibleEvents.length === 0 && inRangeEvents.length > 0 && (
@@ -357,6 +399,15 @@ export default function ImpactPage() {
               <span className="text-[10px] text-[#9aa0a6]/50">core updates, migrations, PR — toggle via “Manual”</span>
             </div>
           </div>
+
+          {/* ── Organic business outcomes (GA4) ───────────────────────── */}
+          <Ga4OutcomesCard
+            siteId={siteId}
+            from={from}
+            to={to}
+            prevFrom={daysAgoStr(rangeDays * 2)}
+            prevTo={daysAgoStr(rangeDays)}
+          />
 
           {/* ── Per-page query drill-down ─────────────────────────────── */}
           {scope === 'page' && selectedPage && (

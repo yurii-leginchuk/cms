@@ -6,19 +6,33 @@ import {
 import type { SeriesPoint, ChangeEvent, ChangeEventType } from '@/api/impact'
 import { clusterEvents, categoryMix, clusterPageCount, CATEGORY_META, type EventCluster } from './cluster'
 
-export type ImpactMetric = 'clicks' | 'impressions' | 'ctr' | 'position'
+// GSC metrics (Search Console) + GA4 organic metrics (Analytics) share the timeline.
+export type ImpactMetric = 'clicks' | 'impressions' | 'ctr' | 'position' | 'sessions' | 'conversions' | 'revenue'
 export type ImpactMetricSel = ImpactMetric | 'all'
+
+export const GA4_METRICS: ImpactMetric[] = ['sessions', 'conversions', 'revenue']
 
 export const METRIC_LABELS: Record<ImpactMetric, string> = {
   clicks: 'Clicks',
   impressions: 'Impressions',
   ctr: 'CTR %',
   position: 'Avg position',
+  sessions: 'Sessions',
+  conversions: 'Conversions',
+  revenue: 'Revenue',
 }
 export const METRIC_SEL_LABELS: Record<ImpactMetricSel, string> = {
   all: 'All', ...METRIC_LABELS,
 }
 const SMALL_MULTIPLE_ORDER: ImpactMetric[] = ['clicks', 'impressions', 'ctr', 'position']
+
+/** GA4 metrics are drawn emerald to distinguish "outcomes" from GSC "SEO" blue. */
+export function isGa4Metric(m: ImpactMetric): boolean {
+  return GA4_METRICS.includes(m)
+}
+function metricAccent(m: ImpactMetric): string {
+  return isGa4Metric(m) ? '#34d399' : '#4e8af4'
+}
 
 export const TYPE_META: Record<ChangeEventType, { label: string; color: string }> = {
   meta: { label: 'Meta', color: '#4e8af4' },
@@ -41,6 +55,9 @@ function metricValue(p: SeriesPoint, metric: ImpactMetric): number {
     case 'impressions': return +p.impressions.toFixed(p.impressions % 1 === 0 ? 0 : 1)
     case 'ctr': return p.impressions > 0 ? +(100 * p.clicks / p.impressions).toFixed(2) : 0
     case 'position': return +p.position.toFixed(1)
+    case 'sessions': return p.sessions ?? 0
+    case 'conversions': return p.conversions ?? 0
+    case 'revenue': return +(p.revenue ?? 0).toFixed(2)
   }
 }
 
@@ -51,17 +68,23 @@ function metricValue(p: SeriesPoint, metric: ImpactMetric): number {
  * explicit, labeled toggle, never a silent substitution.
  */
 function smoothPoints(points: SeriesPoint[], window = 7): SeriesPoint[] {
+  const mean = (slice: SeriesPoint[], f: (q: SeriesPoint) => number) =>
+    slice.reduce((s, q) => s + f(q), 0) / slice.length
   return points.map((p, i) => {
     const slice = points.slice(Math.max(0, i - window + 1), i + 1)
-    const clicks = slice.reduce((s, q) => s + q.clicks, 0)
     const impr = slice.reduce((s, q) => s + q.impressions, 0)
     const wpos = slice.reduce((s, q) => s + q.position * q.impressions, 0)
     return {
       date: p.date,
-      clicks: clicks / slice.length,
+      clicks: mean(slice, (q) => q.clicks),
       impressions: impr / slice.length,
       position: impr > 0 ? wpos / impr : 0,
       provisional: p.provisional,
+      // Preserve GA4 organic metrics through smoothing (trailing mean).
+      sessions: mean(slice, (q) => q.sessions ?? 0),
+      conversions: mean(slice, (q) => q.conversions ?? 0),
+      revenue: mean(slice, (q) => q.revenue ?? 0),
+      users: mean(slice, (q) => q.users ?? 0),
     }
   })
 }
@@ -249,8 +272,8 @@ function MetricPanel({
       >
         <defs>
           <linearGradient id={`impactFill-${metric}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4e8af4" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#4e8af4" stopOpacity={0} />
+            <stop offset="0%" stopColor={metricAccent(metric)} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={metricAccent(metric)} stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff0d" vertical={false} />
@@ -300,7 +323,7 @@ function MetricPanel({
           />
         )}
         <Area
-          type="monotone" dataKey="value" stroke={hideArea ? 'none' : '#4e8af4'} strokeWidth={2}
+          type="monotone" dataKey="value" stroke={hideArea ? 'none' : metricAccent(metric)} strokeWidth={2}
           fill={hideArea ? 'none' : `url(#impactFill-${metric})`} dot={false} isAnimationActive={false}
         />
         {lanes && <MarkerLanes {...lanes} />}
@@ -318,7 +341,7 @@ function MetricPanel({
 
 export function ImpactTimeline({
   points, events, metric, scope, selectedIds, onSelectCluster, onHoverDay, hoveredDay, smooth,
-  annotations, comparePoints,
+  annotations, comparePoints, ga4Metrics = [],
 }: {
   points: SeriesPoint[]
   events: ChangeEvent[]
@@ -331,6 +354,8 @@ export function ImpactTimeline({
   smooth?: boolean
   annotations?: { date: string; label: string }[]
   comparePoints?: SeriesPoint[]
+  /** GA4 metrics to add to the "All" stack (when GA4 is connected). */
+  ga4Metrics?: ImpactMetric[]
 }) {
   const dateSet = useMemo(() => new Set(points.map((p) => p.date)), [points])
   const selectedDay = events.find((e) => selectedIds.has(e.id))?.day
@@ -345,6 +370,23 @@ export function ImpactTimeline({
           <div key={m}>
             <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/70 pl-12 -mb-1">
               {METRIC_LABELS[m]}{m === 'position' && ' · lower is better'}{smooth && ' · 7-day smoothed'}
+            </div>
+            <MetricPanel
+              points={points} metric={m} height={96} showXTicks={false} smooth={smooth}
+              annotations={annotations} onHoverDay={onHoverDay} syncId="impact-all"
+              selectedDay={selectedDay} hoveredDay={hoveredDay} dateSet={dateSet}
+            />
+          </div>
+        ))}
+        {ga4Metrics.length > 0 && (
+          <div className="text-[10px] uppercase tracking-wider text-emerald-400/70 pl-12 pt-1.5 mt-1 border-t border-white/5">
+            Organic outcomes · GA4
+          </div>
+        )}
+        {ga4Metrics.map((m) => (
+          <div key={m}>
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/70 pl-12 -mb-1">
+              {METRIC_LABELS[m]}{smooth && ' · 7-day smoothed'}
             </div>
             <MetricPanel
               points={points} metric={m} height={96} showXTicks={false} smooth={smooth}
