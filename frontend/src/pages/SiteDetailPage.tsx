@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import {
   ChevronRight, ExternalLink, RefreshCw,
   ChevronLeft,
-  FileText, Upload, CheckCircle2, XCircle, Settings, Sparkles,
+  FileText, Upload, CheckCircle2, XCircle, Settings, Sparkles, Zap, Signpost,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -15,8 +15,9 @@ import {
 import { StatusBadge, EmbeddingBadge } from '@/components/StatusBadge'
 import { WpPluginStatus } from '@/components/WpPluginStatus'
 import { GscStatus } from '@/components/GscStatus'
+import { Ga4Status } from '@/components/Ga4Status'
 import { PsiStatus } from '@/components/PsiStatus'
-import { useSite, useParseSite, useUpdateSite } from '@/hooks/useSites'
+import { useSite, useParseSite, useUpdateSite, usePurgeCache } from '@/hooks/useSites'
 import { useGscSiteStatus } from '@/hooks/useGsc'
 import { usePages } from '@/hooks/usePages'
 import { useSyncStatus, useTriggerSync } from '@/hooks/useSync'
@@ -24,7 +25,7 @@ import { useEmbeddingStats, useGenerateEmbeddings } from '@/hooks/useEmbedding'
 import { Label } from '@/components/ui/label'
 import { McpChangesPanel } from '@/components/McpChangesPanel'
 import { IndexStatusOverviewCard } from '@/components/index-status/IndexStatusOverviewCard'
-import type { Site } from '@/api/sites'
+import type { Site, PurgeCacheResult, PurgeStatus } from '@/api/sites'
 import type { McpChangeModule } from '@/api/mcpChanges'
 
 const PAGE_LIMIT = 50
@@ -34,15 +35,43 @@ function relativeTime(date: string | null) {
   return formatDistanceToNow(new Date(date), { addSuffix: true })
 }
 
+const PURGE_MARK: Record<PurgeStatus, { symbol: string; className: string }> = {
+  success: { symbol: '✓', className: 'text-emerald-400' },
+  skipped: { symbol: '–', className: 'text-[#9aa0a6]' },
+  failed: { symbol: '✗', className: 'text-red-400' },
+}
+
+/** Honest per-layer summary shown in the result toast. */
+function PurgeSummary({ result }: { result: PurgeCacheResult }) {
+  return (
+    <div className="mt-1 space-y-1">
+      {result.results.map((r) => {
+        const mark = PURGE_MARK[r.status]
+        return (
+          <div key={r.layer} className="flex items-start gap-1.5 text-[12px] leading-snug">
+            <span className={`${mark.className} font-semibold`}>{mark.symbol}</span>
+            <span className="text-[#e8eaed]">{r.label}</span>
+            {r.detail && <span className="text-[#9aa0a6]">— {r.detail}</span>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ──────────────────────────────── Site Settings Sheet ──────────────────────── */
 
 function SiteSettingsSheet({ site, onClose }: { site: Site | null; onClose: () => void }) {
   const [apiKey, setApiKey] = useState('')
+  const [wpEngine, setWpEngine] = useState(false)
   const update = useUpdateSite()
   const { data: gscSiteStatus, isLoading: gscLoading } = useGscSiteStatus(site?.url)
 
   useEffect(() => {
-    if (site) setApiKey(site.wpApiKey ?? '')
+    if (site) {
+      setApiKey(site.wpApiKey ?? '')
+      setWpEngine(site.hostedOnWpEngine ?? false)
+    }
   }, [site?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSave() {
@@ -50,7 +79,7 @@ function SiteSettingsSheet({ site, onClose }: { site: Site | null; onClose: () =
     try {
       await update.mutateAsync({
         id: site.id,
-        payload: { wpApiKey: apiKey.trim() || null } as any,
+        payload: { wpApiKey: apiKey.trim() || null, hostedOnWpEngine: wpEngine } as any,
       })
       toast.success('Settings saved')
       onClose()
@@ -124,6 +153,32 @@ function SiteSettingsSheet({ site, onClose }: { site: Site | null; onClose: () =
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Hosting — WP Engine (gates the WP Engine cache-purge layer) */}
+          <div className="space-y-2">
+            <Label className="text-[#9aa0a6] text-[11px] font-medium uppercase tracking-widest">
+              Hosting
+            </Label>
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#0f1117] border border-white/8">
+              <div className="min-w-0">
+                <p className="text-[13px] text-[#e8eaed]">Hosted on WP Engine</p>
+                <p className="text-[11px] text-[#9aa0a6]/60 mt-0.5">
+                  Enables the WP Engine cache layer in “Purge cache”.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={wpEngine}
+                onClick={() => setWpEngine((v) => !v)}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${wpEngine ? 'bg-[#4e8af4]' : 'bg-white/10'}`}
+              >
+                <span
+                  className={`inline-block size-3.5 rounded-full bg-white transition-transform ${wpEngine ? 'translate-x-[18px]' : 'translate-x-1'}`}
+                />
+              </button>
+            </div>
           </div>
 
           <div className="rounded-lg border border-white/8 bg-[#0f1117] p-4 space-y-3">
@@ -206,6 +261,22 @@ export default function SiteDetailPage() {
     id!, 1, PAGE_LIMIT, '', isParsing || isSyncing, 'url_asc',
   )
   const parseSite = useParseSite()
+  const purgeCache = usePurgeCache(id!)
+
+  async function handlePurgeCache() {
+    try {
+      const result = await purgeCache.mutateAsync()
+      const anyFailed = result.results.some((r) => r.status === 'failed')
+      const summary = <PurgeSummary result={result} />
+      if (anyFailed) {
+        toast.error('Cache purge finished with errors', { description: summary })
+      } else {
+        toast.success('Cache purged', { description: summary })
+      }
+    } catch {
+      toast.error('Failed to purge cache')
+    }
+  }
 
   async function handleApplyChanges() {
     try {
@@ -283,6 +354,7 @@ export default function SiteDetailPage() {
                 />
                 <WpPluginStatus siteId={id!} />
                 <GscStatus siteUrl={site?.url} />
+                <Ga4Status siteId={id!} />
                 <PsiStatus siteId={id!} />
               </>
             )}
@@ -320,6 +392,18 @@ export default function SiteDetailPage() {
                 )}
               </Button>
             )}
+            <Button
+              size="sm"
+              onClick={handlePurgeCache}
+              disabled={purgeCache.isPending}
+              title="Purge cache across all layers (WP Fastest Cache → WP Engine → Cloudflare)"
+              className="h-8 px-3 text-[13px] bg-[#232635] hover:bg-[#2a2f44] text-[#e8eaed] border border-white/8 gap-1.5 disabled:opacity-50"
+            >
+              {purgeCache.isPending
+                ? <RefreshCw className="size-3.5 animate-spin" />
+                : <Zap className="size-3.5" />}
+              Purge cache
+            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -392,6 +476,25 @@ export default function SiteDetailPage() {
                 {pagesLoading
                   ? 'Loading…'
                   : `${(meta?.total ?? 0).toLocaleString()} pages · browse and inspect each page's structure`}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="size-5 text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors flex-shrink-0" />
+        </Link>
+
+        {/* Redirects entry point */}
+        <Link
+          to={`/sites/${id}/redirects`}
+          className="flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-[#1a1d27] px-5 py-4 hover:bg-[#1f222e] hover:border-white/12 transition-colors group"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="size-10 rounded-lg bg-[#4e8af4]/15 flex items-center justify-center flex-shrink-0">
+              <Signpost className="size-5 text-[#4e8af4]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[14px] font-medium text-[#e8eaed]">Redirects</p>
+              <p className="text-[12px] text-[#9aa0a6] mt-0.5">
+                Mirror &amp; review the site's Redirection-plugin redirects · synced nightly
               </p>
             </div>
           </div>

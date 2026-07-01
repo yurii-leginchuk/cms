@@ -47,14 +47,15 @@ describe('McpChangeService accept/reject dispatch', () => {
       createSubtask: jest.fn().mockResolvedValue({}),
       linkEntity: jest.fn().mockResolvedValue({}),
     };
+    const redirectWriteService = { applyChange: jest.fn().mockResolvedValue(undefined) };
 
     const service = new McpChangeService(
       repo as any, pageRepo as any, schemaRepo as any, imageRepo as any,
       pagesService as any, syncService as any, schemaService as any,
       schemaSyncService as any, imageService as any, imageSyncService as any,
-      asanaTaskService as any,
+      asanaTaskService as any, redirectWriteService as any,
     );
-    return { service, req, repo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService, asanaTaskService };
+    return { service, req, repo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService, asanaTaskService, redirectWriteService };
   }
 
   it('meta.update → updateMeta + per-page sync, marks accepted', async () => {
@@ -158,5 +159,25 @@ describe('McpChangeService accept/reject dispatch', () => {
     await expect(ctx.service.accept('req-1')).rejects.toThrow('WP unreachable');
     expect(ctx.req.status).toBe('pending');
     expect(ctx.req.error).toBe('WP unreachable');
+  });
+
+  it('redirect.update → delegates to RedirectWriteService.applyChange, marks accepted', async () => {
+    const ctx = makeService({
+      module: 'redirect', action: 'redirect.update', targetType: 'redirect', targetId: 'redir-1',
+      payload: { actionCode: 301 },
+    });
+    const out = await ctx.service.accept('req-1');
+    expect(ctx.redirectWriteService.applyChange).toHaveBeenCalledWith(ctx.req);
+    expect(out.status).toBe('accepted');
+  });
+
+  it('redirect push failure leaves the request pending with the error recorded', async () => {
+    const ctx = makeService({
+      module: 'redirect', action: 'redirect.create', targetType: 'redirect', targetId: '', payload: { source: '/a' },
+    });
+    ctx.redirectWriteService.applyChange.mockRejectedValueOnce(new Error('HTTP 502'));
+    await expect(ctx.service.accept('req-1')).rejects.toThrow('HTTP 502');
+    expect(ctx.req.status).toBe('pending');
+    expect(ctx.req.error).toBe('HTTP 502');
   });
 });

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
 
 export class UpdateSiteDto {
   @IsOptional()
@@ -15,4 +15,8 @@ export class UpdateSiteDto {
   @IsString()
   @MaxLength(500)
   gscProperty?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  hostedOnWpEngine?: boolean;
 }

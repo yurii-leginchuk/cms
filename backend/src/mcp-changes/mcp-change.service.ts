@@ -21,6 +21,7 @@ import { SchemaSyncService } from '../schema/schema-sync.service';
 import { ImageService } from '../images/image.service';
 import { ImageSyncService } from '../images/image-sync.service';
 import { AsanaTaskService } from '../asana/asana-task.service';
+import { RedirectWriteService } from '../redirect/redirect-write.service';
 
 export interface CreateChangeInput {
   siteId: string;
@@ -65,6 +66,7 @@ export class McpChangeService {
     private readonly imageService: ImageService,
     private readonly imageSyncService: ImageSyncService,
     private readonly asanaTaskService: AsanaTaskService,
+    private readonly redirectWriteService: RedirectWriteService,
   ) {}
 
   // ── Create a PENDING proposal (what the MCP server calls) ───────────────────
@@ -209,14 +211,19 @@ export class McpChangeService {
     });
   }
 
-  async counts(
-    siteId: string,
-  ): Promise<{ total: number; meta: number; schema: number; alt: number; asana: number }> {
+  async counts(siteId: string): Promise<{
+    total: number;
+    meta: number;
+    schema: number;
+    alt: number;
+    asana: number;
+    redirect: number;
+  }> {
     const rows = await this.repo.find({
       where: { siteId, status: 'pending' },
       select: ['module'],
     });
-    const c = { total: rows.length, meta: 0, schema: 0, alt: 0, asana: 0 };
+    const c = { total: rows.length, meta: 0, schema: 0, alt: 0, asana: 0, redirect: 0 };
     for (const r of rows) c[r.module] += 1;
     return c;
   }
@@ -361,6 +368,15 @@ export class McpChangeService {
           entityType: (p.entityType as string | null) ?? null,
           entityId: (p.entityId as string | null) ?? null,
         });
+        return;
+      }
+      // ── Redirect — push the write live to WordPress (via the Redirection plugin) ──
+      case 'redirect.create':
+      case 'redirect.update':
+      case 'redirect.delete':
+      case 'redirect.enable':
+      case 'redirect.disable': {
+        await this.redirectWriteService.applyChange(req);
         return;
       }
       default:

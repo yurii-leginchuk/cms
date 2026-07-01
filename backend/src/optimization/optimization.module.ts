@@ -66,6 +66,7 @@ import { WebhookController } from './webhook.controller';
     OptimizationService,
     OptimizationConfigService,
     OptimizationAutopilotService,
+    CloudflareCdnService,
   ],
 })
 export class OptimizationModule {}

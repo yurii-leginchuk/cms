@@ -30,6 +30,8 @@ import { McpChangeModule } from './mcp-changes/mcp-change.module';
 import { CrawlModule } from './crawl/crawl.module';
 import { AsanaModule } from './asana/asana.module';
 import { Ga4Module } from './ga4/ga4.module';
+import { CacheModule } from './cache/cache.module';
+import { RedirectModule } from './redirect/redirect.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
@@ -69,6 +71,8 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     CrawlModule,
     AsanaModule,
     Ga4Module,
+    CacheModule,
+    RedirectModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ApiKeyGuard }],

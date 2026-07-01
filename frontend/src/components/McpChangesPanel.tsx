@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   Sparkles, ChevronDown, ChevronRight, UploadCloud, X, CheckCircle2,
-  AlertTriangle, Loader2, FileText, Braces, ImageIcon, CheckSquare,
+  AlertTriangle, Loader2, FileText, Braces, ImageIcon, CheckSquare, Signpost,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,6 +20,7 @@ const MODULES: { key: McpChangeModule; label: string; icon: typeof FileText }[] 
   { key: 'schema', label: 'Schema', icon: Braces },
   { key: 'alt', label: 'Alt text', icon: ImageIcon },
   { key: 'asana', label: 'Asana', icon: CheckSquare },
+  { key: 'redirect', label: 'Redirects', icon: Signpost },
 ]
 
 const ACTION_LABEL: Record<string, string> = {
@@ -34,6 +35,11 @@ const ACTION_LABEL: Record<string, string> = {
   'asana.assignee': 'Assign',
   'asana.subtask': 'Subtask',
   'asana.link': 'Link',
+  'redirect.create': 'Create',
+  'redirect.update': 'Edit',
+  'redirect.delete': 'Delete',
+  'redirect.enable': 'Enable',
+  'redirect.disable': 'Disable',
 }
 
 export function McpChangesPanel({
@@ -347,7 +353,62 @@ function ProposalDiff({ item }: { item: McpChangeRequest }) {
   if (item.module === 'meta') return <MetaDiff item={item} />
   if (item.module === 'alt') return <AltDiff item={item} />
   if (item.module === 'asana') return <AsanaDiff item={item} />
+  if (item.module === 'redirect') return <RedirectDiff item={item} />
   return <SchemaDiff item={item} />
+}
+
+function RedirectDiff({ item }: { item: McpChangeRequest }) {
+  const before = (item.before ?? {}) as Record<string, unknown>
+  const after = item.payload as Record<string, unknown>
+
+  if (item.action === 'redirect.create') {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-[11px] text-emerald-300">New redirect</p>
+        {['source', 'target', 'actionCode', 'matchType', 'regex', 'enabled'].map((k) =>
+          after[k] === undefined ? null : (
+            <div key={k} className="grid grid-cols-[110px_1fr] gap-2 text-[12px]">
+              <span className="text-[#9aa0a6]">{humanize(k)}</span>
+              <span className="text-emerald-300 break-all">{fmt(after[k])}</span>
+            </div>
+          ),
+        )}
+      </div>
+    )
+  }
+  if (item.action === 'redirect.delete') {
+    return (
+      <div className="space-y-1">
+        <p className="text-[11px] text-red-300">Removing redirect</p>
+        <p className="text-[12px] text-[#9aa0a6] break-all">
+          {fmt(before.source)} {before.target ? `→ ${fmt(before.target)}` : ''}
+        </p>
+      </div>
+    )
+  }
+  if (item.action === 'redirect.enable' || item.action === 'redirect.disable') {
+    return (
+      <p className="text-[12px] text-[#4e8af4]">
+        {item.action === 'redirect.enable' ? 'Enable' : 'Disable'} {fmt(before.source)}
+      </p>
+    )
+  }
+  // redirect.update — before → after for the changed fields only
+  const keys = Object.keys(after)
+  return (
+    <div className="space-y-2">
+      {keys.map((k) => (
+        <div key={k} className="grid grid-cols-[110px_1fr] gap-2 text-[12px]">
+          <span className="text-[#9aa0a6]">{humanize(k)}</span>
+          <span className="flex items-center gap-2 min-w-0 flex-wrap">
+            <span className="text-[#9aa0a6]/70 line-through break-all">{fmt(before[k])}</span>
+            <ChevronRight className="size-3 text-[#4e8af4] flex-shrink-0" />
+            <span className="text-[#4e8af4] break-all">{fmt(after[k])}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function AsanaDiff({ item }: { item: McpChangeRequest }) {

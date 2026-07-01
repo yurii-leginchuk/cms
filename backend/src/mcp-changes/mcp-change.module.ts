@@ -11,6 +11,7 @@ import { SyncModule } from '../sync/sync.module';
 import { SchemaModule } from '../schema/schema.module';
 import { ImageModule } from '../images/image.module';
 import { AsanaModule } from '../asana/asana.module';
+import { RedirectModule } from '../redirect/redirect.module';
 
 /**
  * The human-approval gate. Reuses the existing module services (Pages, Sync,
@@ -24,6 +25,7 @@ import { AsanaModule } from '../asana/asana.module';
     SchemaModule, // exports SchemaService + SchemaSyncService
     ImageModule, // exports ImageService + ImageSyncService
     AsanaModule, // exports AsanaTaskService (gated task writes)
+    RedirectModule, // exports RedirectWriteService (gated redirect writes)
   ],
   controllers: [McpChangeController],
   providers: [McpChangeService],
