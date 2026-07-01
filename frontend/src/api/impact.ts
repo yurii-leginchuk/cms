@@ -1,11 +1,23 @@
 import apiClient from './client'
 
-export type ChangeEventType = 'meta' | 'technical' | 'schema'
+export type ChangeEventType = 'meta' | 'technical' | 'schema' | 'alt' | 'task' | 'manual'
+export type ChangeEventCategory =
+  | 'meta-title'
+  | 'meta-description'
+  | 'technical'
+  | 'schema'
+  | 'alt'
+  | 'task'
+  | 'manual'
 export type ChangeEffectStatus = 'pending' | 'measured' | 'no_data'
 
 export interface ChangeEvent {
   id: string
   type: ChangeEventType
+  /** Finer bucket driving the per-category legend toggles (Phase 3). */
+  category: ChangeEventCategory
+  /** Time-based grouping id — events in one clusterId render as one marker. */
+  clusterId: string
   subtype: string
   pageId: string | null
   pageUrl: string
@@ -19,6 +31,9 @@ export interface ChangeEvent {
   effectStatus: ChangeEffectStatus | null
   effectId: string | null
   confoundedWith: number
+  /** Task events only (Phase 2). */
+  scope?: 'sitewide' | 'pages'
+  taskUrl?: string | null
 }
 
 export type ImpactScope = 'global' | 'page'

@@ -11,6 +11,7 @@ import axios from 'axios';
 import { Site } from '../sites/site.entity';
 import { SiteImage, ImageAltStatus } from './site-image.entity';
 import { ImagePlacement } from './image-placement.entity';
+import { AltPublishEvent } from '../impact/alt-publish-event.entity';
 
 /**
  * Pushes image ALT text to WordPress, mirroring SchemaSyncService. The WP target
@@ -64,6 +65,8 @@ export class ImageSyncService {
     @InjectRepository(SiteImage) private readonly imageRepo: Repository<SiteImage>,
     @InjectRepository(ImagePlacement)
     private readonly placementRepo: Repository<ImagePlacement>,
+    @InjectRepository(AltPublishEvent)
+    private readonly altEventRepo: Repository<AltPublishEvent>,
   ) {}
 
   private async requireKey(siteId: string): Promise<Site> {
@@ -152,6 +155,26 @@ export class ImageSyncService {
         },
       );
     }
+
+    // Freeze an append-only impact marker: the immutable publish instant, the alt
+    // that went live, and the page-set as it was NOW (not recomputed later from
+    // live placements). Best-effort — a marker write must never fail the apply.
+    try {
+      const pageIds = [...new Set(placements.map((p) => p.pageId).filter(Boolean))] as string[];
+      await this.altEventRepo.save(
+        this.altEventRepo.create({
+          siteId: image.siteId,
+          imageId: image.id,
+          canonicalUrl: image.canonicalUrl,
+          publishedAt: now,
+          altAfter: alt,
+          pageIds,
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(`alt_publish_event write failed for ${image.canonicalUrl}: ${(err as Error).message}`);
+    }
+
     this.logger.log(`Applied alt to ${image.canonicalUrl}`);
   }
 

@@ -18,5 +18,15 @@ export const ONSET_GAP_DAYS = 14;
 /** Two changes on the same page within this many days can't be isolated. */
 export const CONFOUND_WINDOW_DAYS = 28;
 
+/**
+ * DISPLAY-clustering window (days). Changes shipped within this many days are one
+ * batch of work → one grouped marker. This is a DEPLOY-CADENCE window ("were these
+ * shipped together?") and is deliberately kept an order of magnitude away from the
+ * measurement constants above (ONSET_GAP=14 / WINDOW=28 / CONFOUND=28) — grouping
+ * is NOT measurement. Never widen it to "cover recrawl": that manufactures false
+ * batches and invites over-claiming causation.
+ */
+export const GROUP_WINDOW_DAYS = 2;
+
 /** Below this many impressions a window is "low sample — not significant". */
 export const MIN_SIGNIFICANT_IMPRESSIONS = 100;

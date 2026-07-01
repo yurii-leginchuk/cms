@@ -502,6 +502,9 @@ function MarkerDetail({
     meta: 'Watch CTR (a title/description win often lifts CTR without moving position).',
     technical: 'Watch impressions (canonical/noindex changes eligibility, not CTR).',
     schema: "Affects rich-result eligibility - you won't see this isolated in clicks or impressions.",
+    alt: "Affects image search - you won't see this isolated in the clicks/impressions curve.",
+    task: 'Marks when a tracked task was completed - a workflow signal, not a verified live-site diff.',
+    manual: 'A manually pinned external event (core update, migration, PR) for context.',
   }
   return (
     <div className="rounded-xl border border-[#4e8af4]/40 bg-[#1a1d27] p-4 max-w-4xl">

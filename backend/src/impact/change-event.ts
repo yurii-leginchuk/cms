@@ -5,7 +5,20 @@
  * assembled on read, never stored.
  */
 
-export type ChangeEventType = 'meta' | 'technical' | 'schema';
+export type ChangeEventType = 'meta' | 'technical' | 'schema' | 'alt' | 'task' | 'manual';
+
+/**
+ * Finer than `type` — drives the per-category legend toggles and marker color.
+ * `meta` splits into title vs description (each an independent toggle).
+ */
+export type ChangeEventCategory =
+  | 'meta-title'
+  | 'meta-description'
+  | 'technical'
+  | 'schema'
+  | 'alt'
+  | 'task'
+  | 'manual';
 
 export type ChangeEffectStatus = 'pending' | 'measured' | 'no_data';
 
@@ -13,6 +26,16 @@ export interface ChangeEvent {
   /** Stable id: `${type}:${sourceId}` so the frontend can key/select markers. */
   id: string;
   type: ChangeEventType;
+  /** Finer bucket for the per-category toggles (see ChangeEventCategory). */
+  category: ChangeEventCategory;
+  /**
+   * Time-based cluster id (backend-computed). Events shipped within
+   * GROUP_WINDOW_DAYS in the same partition (site-wide or a single page, per the
+   * request scope) share a clusterId → one grouped marker. Pure hash of
+   * (level, partitionKey, anchorDay, window, sorted member ids) — same inputs give
+   * the same id; a member mutation legitimately changes it.
+   */
+  clusterId: string;
   /** e.g. 'title + description', 'canonical', 'noindex', 'schema'. */
   subtype: string;
   pageId: string | null;
@@ -39,4 +62,8 @@ export interface ChangeEvent {
   effectId: string | null;
   /** Other tracked changes on the same page within the measurement window. */
   confoundedWith: number;
+  /** Task events only: 'sitewide' | 'pages' scope (Phase 2). */
+  scope?: 'sitewide' | 'pages';
+  /** Task events only: permalink to the Asana task (Phase 2). */
+  taskUrl?: string | null;
 }

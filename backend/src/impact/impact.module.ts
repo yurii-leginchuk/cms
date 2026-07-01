@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GscModule } from '../gsc/gsc.module';
 import { GscDaily } from './gsc-daily.entity';
 import { ImpactAnnotation } from './impact-annotation.entity';
+import { AltPublishEvent } from './alt-publish-event.entity';
 import { WatchedKeyword } from './watched-keyword.entity';
 import { KeywordDaily } from './keyword-daily.entity';
 import { MetaHistory } from '../pages/meta-history.entity';
@@ -21,7 +22,7 @@ import { ImpactController } from './impact.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      GscDaily, ImpactAnnotation, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, OptimizationEffect, BrandCard,
+      GscDaily, ImpactAnnotation, AltPublishEvent, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, OptimizationEffect, BrandCard,
     ]),
     GscModule,
   ],
