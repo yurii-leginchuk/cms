@@ -16,7 +16,7 @@ import {
  *   accept = apply the proposed change to the module AND publish to WordPress.
  *   reject = discard.
  */
-export type McpChangeModule = 'meta' | 'schema' | 'alt';
+export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana';
 export type McpChangeStatus = 'pending' | 'accepted' | 'rejected';
 
 /** Fine-grained action discriminator (drives accept() dispatch). */
@@ -25,7 +25,13 @@ export type McpChangeAction =
   | 'schema.add'
   | 'schema.update'
   | 'schema.delete'
-  | 'alt.set';
+  | 'alt.set'
+  | 'asana.create'
+  | 'asana.update'
+  | 'asana.status'
+  | 'asana.assignee'
+  | 'asana.subtask'
+  | 'asana.link';
 
 @Entity('mcp_change_requests')
 @Index(['siteId', 'status'])
@@ -45,7 +51,7 @@ export class McpChangeRequest {
 
   /** What the change targets — used to dispatch + to render in the queue. */
   @Column({ type: 'varchar', length: 16 })
-  targetType: 'page' | 'image';
+  targetType: 'page' | 'image' | 'task';
 
   /** UUID of the target page or image. */
   @Column({ type: 'varchar', length: 64 })
