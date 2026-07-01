@@ -15,6 +15,8 @@ import SitePromptsPage from '@/pages/SitePromptsPage'
 import SiteBriefPage from '@/pages/SiteBriefPage'
 import SiteChatPage from '@/pages/SiteChatPage'
 import SitePageSpeedPage from '@/pages/SitePageSpeedPage'
+import SiteIndexStatusPage from '@/pages/SiteIndexStatusPage'
+import IndexStatusDetailPage from '@/pages/IndexStatusDetailPage'
 import ImpactPage from '@/pages/ImpactPage'
 import ImpactPagesPage from '@/pages/ImpactPagesPage'
 import ImpactKeywordsPage from '@/pages/ImpactKeywordsPage'
@@ -39,6 +41,8 @@ export default function App() {
           <Route path="sites/:id/brief" element={<SiteBriefPage />} />
           <Route path="sites/:id/chat" element={<SiteChatPage />} />
           <Route path="sites/:id/pagespeed" element={<SitePageSpeedPage />} />
+          <Route path="sites/:id/index-status" element={<SiteIndexStatusPage />} />
+          <Route path="sites/:id/index-status/:pageId" element={<IndexStatusDetailPage />} />
           <Route path="sites/:id/impact" element={<ImpactPage />} />
           <Route path="sites/:id/impact/pages" element={<ImpactPagesPage />} />
           <Route path="sites/:id/impact/keywords" element={<ImpactKeywordsPage />} />
