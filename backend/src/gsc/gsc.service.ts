@@ -50,9 +50,41 @@ interface ServiceAccountCreds {
   token_uri?: string;
 }
 
+/** Raw `inspectionResult` from urlInspection.index.inspect (stored verbatim). */
+export interface UrlInspectionResult {
+  inspectionResultLink?: string;
+  indexStatusResult?: Record<string, unknown>;
+  mobileUsabilityResult?: Record<string, unknown>;
+  richResultsResult?: Record<string, unknown>;
+  ampResult?: Record<string, unknown>;
+}
+
+/** Thrown when the URL Inspection API reports the daily/per-minute quota is spent. */
+export class GscQuotaExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GscQuotaExceededError';
+  }
+}
+
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CREDS_PATH = process.env.GSC_CREDENTIALS_PATH
   || path.join(process.cwd(), 'gsc-credentials.json');
+
+const SCOPE_READONLY = 'https://www.googleapis.com/auth/webmasters.readonly';
+const SCOPE_READWRITE = 'https://www.googleapis.com/auth/webmasters';
+
+/** One row of the Search Console sitemaps list. */
+export interface GscSitemap {
+  path: string;
+  lastSubmitted?: string;
+  lastDownloaded?: string;
+  isPending?: boolean;
+  isSitemapsIndex?: boolean;
+  warnings?: string;
+  errors?: string;
+  contents?: Array<{ type: string; submitted: string; indexed?: string }>;
+}
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -97,7 +129,7 @@ export function resolveDateRange(
 @Injectable()
 export class GscService {
   private readonly logger = new Logger(GscService.name);
-  private tokenCache: { token: string; expiresAt: number } | null = null;
+  private tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
   constructor(
     @InjectRepository(GscCache)
@@ -243,6 +275,97 @@ export class GscService {
     return data;
   }
 
+  // ── URL Inspection ──────────────────────────────────────────────────────────
+
+  /**
+   * Inspect one URL via the URL Inspection API (index-status ground truth).
+   * Uses the SAME `webmasters.readonly` scope as Search Analytics — no extra
+   * auth. `inspectionUrl` must belong to the verified `property`, else Google
+   * returns 403. Quota exhaustion (429, sometimes surfaced as 403 quotaExceeded)
+   * is raised as {@link GscQuotaExceededError} so callers can stop the run.
+   *
+   * Endpoint is v1 on the `searchconsole` host — distinct from the `webmasters/v3`
+   * host used by searchAnalytics.
+   */
+  async inspectUrl(property: string, inspectionUrl: string): Promise<UrlInspectionResult> {
+    const token = await this.getToken();
+    try {
+      const res = await axios.post(
+        'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect',
+        { inspectionUrl, siteUrl: property },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 30_000 },
+      );
+      return (res.data?.inspectionResult ?? {}) as UrlInspectionResult;
+    } catch (err) {
+      if (err instanceof AxiosError) {
+        const status = err.response?.status;
+        const reason = (err.response?.data as any)?.error?.status
+          ?? (err.response?.data as any)?.error?.errors?.[0]?.reason;
+        const msg = (err.response?.data as any)?.error?.message ?? err.message;
+        if (status === 429 || reason === 'RESOURCE_EXHAUSTED' || reason === 'quotaExceeded' || reason === 'rateLimitExceeded') {
+          throw new GscQuotaExceededError(`GSC inspection quota exhausted: ${msg}`);
+        }
+        if (status === 403) throw new UnauthorizedException(`GSC inspection: ${msg}`);
+        throw new BadRequestException(`GSC inspection error (${status}): ${msg}`);
+      }
+      throw err;
+    }
+  }
+
+  /** sc-domain vs URL-prefix — needed by callers that store propertyType. */
+  propertyType(property: string): 'sc_domain' | 'url_prefix' {
+    return property.startsWith('sc-domain:') ? 'sc_domain' : 'url_prefix';
+  }
+
+  // ── Sitemaps (discovery nudge) ──────────────────────────────────────────────
+
+  /** List the sitemaps GSC knows for a property (readonly). */
+  async listSitemaps(property: string): Promise<GscSitemap[]> {
+    const token = await this.getToken(SCOPE_READONLY);
+    try {
+      const res = await axios.get(
+        `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(property)}/sitemaps`,
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 20_000 },
+      );
+      return ((res.data?.sitemap as GscSitemap[]) ?? []);
+    } catch (err) {
+      if (err instanceof AxiosError) {
+        const msg = (err.response?.data as any)?.error?.message ?? err.message;
+        throw new BadRequestException(`GSC sitemaps.list error (${err.response?.status}): ${msg}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * (Re)submit a sitemap to Search Console — a legitimate DISCOVERY nudge (tells
+   * Google to re-fetch the sitemap). Does NOT force indexing. Needs the
+   * read-write `webmasters` scope AND the service account to be a Full user /
+   * Owner on the property; a 403 means it lacks write permission.
+   */
+  async submitSitemap(property: string, sitemapUrl: string): Promise<void> {
+    const token = await this.getToken(SCOPE_READWRITE);
+    try {
+      await axios.put(
+        `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(property)}/sitemaps/${encodeURIComponent(sitemapUrl)}`,
+        undefined,
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 20_000 },
+      );
+    } catch (err) {
+      if (err instanceof AxiosError) {
+        const status = err.response?.status;
+        const msg = (err.response?.data as any)?.error?.message ?? err.message;
+        if (status === 403) {
+          throw new UnauthorizedException(
+            `GSC can't submit the sitemap — the service account needs Full-user/Owner (read-write) access on ${property}. (${msg})`,
+          );
+        }
+        throw new BadRequestException(`GSC sitemaps.submit error (${status}): ${msg}`);
+      }
+      throw err;
+    }
+  }
+
   async clearCache(siteId?: string): Promise<void> {
     if (siteId) await this.cacheRepo.delete({ siteId });
     else await this.cacheRepo.clear();
@@ -271,9 +394,10 @@ export class GscService {
     return creds;
   }
 
-  private async getToken(): Promise<string> {
-    if (this.tokenCache && this.tokenCache.expiresAt - Date.now() > 60_000) {
-      return this.tokenCache.token;
+  private async getToken(scope: string = SCOPE_READONLY): Promise<string> {
+    const cached = this.tokenCache.get(scope);
+    if (cached && cached.expiresAt - Date.now() > 60_000) {
+      return cached.token;
     }
 
     const creds = await this.loadCreds();
@@ -282,7 +406,7 @@ export class GscService {
     const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
     const payload = b64url(JSON.stringify({
       iss:   creds.client_email,
-      scope: 'https://www.googleapis.com/auth/webmasters.readonly',
+      scope,
       aud:   creds.token_uri ?? 'https://oauth2.googleapis.com/token',
       exp:   now + 3600,
       iat:   now,
@@ -303,8 +427,8 @@ export class GscService {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
       const token: string = res.data.access_token;
-      this.tokenCache = { token, expiresAt: Date.now() + 3_500_000 };
-      this.logger.log('GSC service account token acquired');
+      this.tokenCache.set(scope, { token, expiresAt: Date.now() + 3_500_000 });
+      this.logger.log(`GSC service account token acquired (${scope.endsWith('.readonly') ? 'readonly' : 'readwrite'})`);
       return token;
     } catch (err) {
       const msg = err instanceof AxiosError ? JSON.stringify(err.response?.data) : (err as Error).message;

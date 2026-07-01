@@ -11,6 +11,7 @@ import { parseStructure, singleProseStructure } from './structure-parser';
 import { EmbeddingService } from '../embedding/embedding.service';
 import { SettingsService } from '../settings/settings.service';
 import { TokenUsageService } from '../token-usage/token-usage.service';
+import { CrawlScanService } from '../crawl/crawl-scan.service';
 
 @Injectable()
 export class ScraperService implements OnApplicationBootstrap {
@@ -25,6 +26,7 @@ export class ScraperService implements OnApplicationBootstrap {
     private readonly embeddingService: EmbeddingService,
     private readonly settingsService: SettingsService,
     private readonly tokenUsageService: TokenUsageService,
+    private readonly crawlScanService: CrawlScanService,
   ) {}
 
   /**
@@ -81,6 +83,14 @@ export class ScraperService implements OnApplicationBootstrap {
       // Auto-trigger embedding after parse
       this.embeddingService.generateForSite(siteId).catch((err) => {
         this.logger.error(`Auto-embedding failed for site ${siteId}: ${(err as Error).message}`);
+      });
+
+      // Auto-trigger an index-inspection backfill so a freshly-added site shows
+      // live index status without waiting for the nightly scan. Reserves against
+      // TODAY's hard cap; pages beyond the daily limit are NOT sent and roll to
+      // the next nightly run. Fire-and-forget — no-op if GSC isn't connected.
+      this.crawlScanService.runForSite(siteId, 'backfill').catch((err) => {
+        this.logger.error(`Index-inspection backfill failed for site ${siteId}: ${(err as Error).message}`);
       });
     } catch (err) {
       this.logger.error(`Failed to parse site ${site.name}: ${err.message}`);

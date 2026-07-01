@@ -27,6 +27,7 @@ import { ImageModule } from './images/image.module';
 import { OptimizationModule } from './optimization/optimization.module';
 import { ImpactModule } from './impact/impact.module';
 import { McpChangeModule } from './mcp-changes/mcp-change.module';
+import { CrawlModule } from './crawl/crawl.module';
 import { AsanaModule } from './asana/asana.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
@@ -64,6 +65,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     OptimizationModule,
     ImpactModule,
     McpChangeModule,
+    CrawlModule,
     AsanaModule,
   ],
   controllers: [AppController],

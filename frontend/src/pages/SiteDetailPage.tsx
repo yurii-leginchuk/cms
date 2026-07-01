@@ -23,6 +23,7 @@ import { useSyncStatus, useTriggerSync } from '@/hooks/useSync'
 import { useEmbeddingStats, useGenerateEmbeddings } from '@/hooks/useEmbedding'
 import { Label } from '@/components/ui/label'
 import { McpChangesPanel } from '@/components/McpChangesPanel'
+import { IndexStatusOverviewCard } from '@/components/index-status/IndexStatusOverviewCard'
 import type { Site } from '@/api/sites'
 import type { McpChangeModule } from '@/api/mcpChanges'
 
@@ -372,6 +373,9 @@ export default function SiteDetailPage() {
 
         {/* Pending AI changes (human approval gate for MCP-originated edits) */}
         <McpChangesPanel siteId={id} focusModule={focusModule} />
+
+        {/* Index status — coverage + what the last scan changed */}
+        <IndexStatusOverviewCard siteId={id} parsing={isParsing} />
 
         {/* Pages entry point */}
         <Link

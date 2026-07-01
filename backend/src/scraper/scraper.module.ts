@@ -6,9 +6,10 @@ import { Page } from '../pages/page.entity';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { SettingsModule } from '../settings/settings.module';
 import { TokenUsageModule } from '../token-usage/token-usage.module';
+import { CrawlModule } from '../crawl/crawl.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Site, Page]), EmbeddingModule, SettingsModule, TokenUsageModule],
+  imports: [TypeOrmModule.forFeature([Site, Page]), EmbeddingModule, SettingsModule, TokenUsageModule, CrawlModule],
   providers: [ScraperService],
   exports: [ScraperService],
 })
