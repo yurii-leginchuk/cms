@@ -22,6 +22,7 @@ import {
 import { ClusterSheet } from '@/components/impact/ClusterSheet'
 import { AddEventDialog, type EditingAnnotation } from '@/components/impact/AddEventDialog'
 import { CATEGORY_META, CATEGORY_ORDER, clusterEvents } from '@/components/impact/cluster'
+import { Ga4OutcomesCard } from '@/components/impact/Ga4OutcomesCard'
 import { ImpactQueriesPanel } from '@/components/impact/ImpactQueriesPanel'
 import type { ChangeEvent, ChangeEventCategory } from '@/api/impact'
 
@@ -357,6 +358,15 @@ export default function ImpactPage() {
               <span className="text-[10px] text-[#9aa0a6]/50">core updates, migrations, PR — toggle via “Manual”</span>
             </div>
           </div>
+
+          {/* ── Organic business outcomes (GA4) ───────────────────────── */}
+          <Ga4OutcomesCard
+            siteId={siteId}
+            from={from}
+            to={to}
+            prevFrom={daysAgoStr(rangeDays * 2)}
+            prevTo={daysAgoStr(rangeDays)}
+          />
 
           {/* ── Per-page query drill-down ─────────────────────────────── */}
           {scope === 'page' && selectedPage && (

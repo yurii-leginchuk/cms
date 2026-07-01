@@ -14,6 +14,7 @@ import { TokenUsageModule } from '../token-usage/token-usage.module';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { GscModule } from '../gsc/gsc.module';
 import { SchemaModule } from '../schema/schema.module';
+import { Ga4Module } from '../ga4/ga4.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SchemaModule } from '../schema/schema.module';
     TokenUsageModule,
     EmbeddingModule,
     GscModule,
+    Ga4Module, // provides Ga4Service for ga4-tools
     // Provides SchemaService/SchemaAiService/SchemaSyncService/SchemaQcService for schema-tools.
     SchemaModule,
   ],

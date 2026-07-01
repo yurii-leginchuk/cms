@@ -21,6 +21,8 @@ import { SettingsService } from '../settings/settings.service';
 import { TokenUsageService } from '../token-usage/token-usage.service';
 import { EmbeddingService } from '../embedding/embedding.service';
 import { GscService } from '../gsc/gsc.service';
+import { Ga4Service } from '../ga4/ga4.service';
+import { createGa4Tools } from './tools/ga4-tools';
 import { createSiteTools } from './tools/site-tools';
 import { createProposalTools } from './tools/proposal-tools';
 import { createSchemaTools } from './tools/schema-tools';
@@ -100,6 +102,7 @@ export class AgentService {
     private readonly tokenUsageService: TokenUsageService,
     private readonly embeddingService: EmbeddingService,
     private readonly gscService: GscService,
+    private readonly ga4Service: Ga4Service,
     private readonly schemaService: SchemaService,
     private readonly schemaAiService: SchemaAiService,
     private readonly schemaSyncService: SchemaSyncService,
@@ -237,7 +240,8 @@ export class AgentService {
       this.schemaQcService,
       session.siteId,
     );
-    const tools = { ...siteTools, ...proposalTools, ...schemaTools };
+    const ga4Tools = createGa4Tools(this.ga4Service, session.siteId);
+    const tools = { ...siteTools, ...proposalTools, ...schemaTools, ...ga4Tools };
 
     // Build messages for AI SDK
     const aiMessages: { role: 'user' | 'assistant'; content: string }[] = [
