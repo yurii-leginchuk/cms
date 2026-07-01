@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
@@ -62,6 +62,13 @@ export class RedirectResolveService {
     if (!site) throw new NotFoundException('Site not found');
     const item = await this.itemRepo.findOne({ where: { id: redirectId, siteId } });
     if (!item) throw new NotFoundException('Redirect not found');
+    if (item.regex) {
+      // A regex source is a PATTERN, not a URL — fetching it verbatim would
+      // "resolve" a meaningless address and persist a bogus live status.
+      throw new BadRequestException(
+        'Regex redirects cannot be live-resolved — the source is a pattern, not a URL.',
+      );
+    }
 
     const start = this.absoluteUrl(site.url, item.source);
     const result = await this.resolveUrl(site.url, start);
@@ -104,10 +111,11 @@ export class RedirectResolveService {
     let error: string | null = null;
 
     for (let i = 0; i < MAX_HOPS; i++) {
-      if (!this.reserveFetch()) { budgetExhausted = true; break; }
-
+      // Loop check BEFORE reserving budget — a detected loop makes no request.
       const canon = this.stripBust(current);
       if (visited.has(canon)) { loop = true; break; }
+
+      if (!this.reserveFetch()) { budgetExhausted = true; break; }
       visited.add(canon);
 
       let status: number;

@@ -233,13 +233,17 @@ export class RedirectValidateService {
     return { redirectId, verdict, reason, before, after, trail, finalStatus, finalExternal };
   }
 
-  /** Live, enabled, non-tombstoned redirects as graph nodes (optionally minus one). */
+  /**
+   * Live, ENABLED, non-tombstoned redirects as graph nodes (optionally minus
+   * one). Disabled rules don't redirect anything, so they must not create
+   * phantom cycles that block a save, nor count as duplicates/conflicts/chains.
+   */
   private async loadGraph(siteId: string, excludeId?: string): Promise<GraphRedirect[]> {
     const rows = await this.itemRepo.find({
       where: { siteId, ...(excludeId ? { id: Not(excludeId) } : {}) },
     });
     return rows
-      .filter((r) => r.deletedInWpAt == null)
+      .filter((r) => r.deletedInWpAt == null && r.enabled)
       .map((r) => ({
         id: r.id,
         pluginId: r.pluginId,

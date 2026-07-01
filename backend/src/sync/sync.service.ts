@@ -101,6 +101,47 @@ export class SyncService {
     );
   }
 
+  /**
+   * AWAITED push of one page's pending jobs — used by the MCP gate so "accept"
+   * reflects the REAL WordPress outcome instead of fire-and-forgetting it.
+   * Throws with the job's error when the push did not succeed (the job stays
+   * queued for the retry cron either way).
+   */
+  async pushPageNow(siteId: string, pageId: string): Promise<void> {
+    await this.jobRepo
+      .createQueryBuilder()
+      .update(SyncJob)
+      .set({ status: SyncJobStatus.PENDING, nextRetryAt: null })
+      .where('siteId = :siteId', { siteId })
+      .andWhere('pageId = :pageId', { pageId })
+      .andWhere('status = :status', { status: SyncJobStatus.FAILED })
+      .andWhere('attempts < maxAttempts')
+      .execute();
+
+    const jobs = await this.jobRepo.find({
+      where: { siteId, pageId, status: SyncJobStatus.PENDING },
+    });
+    if (jobs.length === 0) return;
+
+    const site = await this.siteRepo.findOne({ where: { id: siteId } });
+    if (!site) throw new Error('Site not found');
+    for (const job of jobs) {
+      await this.processJob(job, site);
+    }
+
+    const after = await this.jobRepo.find({
+      where: { siteId, pageId },
+      order: { createdAt: 'DESC' },
+      take: 1,
+    });
+    const latest = after[0];
+    if (latest && latest.status !== SyncJobStatus.SUCCESS) {
+      throw new Error(
+        latest.lastError ?? 'WordPress push did not succeed (queued for retry).',
+      );
+    }
+  }
+
   private async processBatch(siteId: string, jobs: SyncJob[]): Promise<void> {
     const site = await this.siteRepo.findOne({ where: { id: siteId } });
     if (!site) return;
@@ -120,8 +161,19 @@ export class SyncService {
       return;
     }
 
-    // Mark as in-flight so no other runner picks it up
-    await this.jobRepo.update(job.id, { status: SyncJobStatus.PROCESSING });
+    // ATOMIC claim: flip to PROCESSING only if nobody else already has. A double
+    // "Apply" click (or cron overlapping a manual trigger) both load the same
+    // PENDING jobs — without this both would push the page to WP.
+    const claim = await this.jobRepo
+      .createQueryBuilder()
+      .update(SyncJob)
+      .set({ status: SyncJobStatus.PROCESSING })
+      .where('id = :id', { id: job.id })
+      .andWhere('status NOT IN (:...taken)', {
+        taken: [SyncJobStatus.PROCESSING, SyncJobStatus.SUCCESS],
+      })
+      .execute();
+    if (!claim.affected) return; // another runner owns it
     await this.pageRepo.update(page.id, { syncStatus: PageSyncStatus.SYNCING });
 
     try {

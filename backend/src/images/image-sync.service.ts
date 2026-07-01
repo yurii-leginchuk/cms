@@ -106,7 +106,7 @@ export class ImageSyncService {
     const alt = image.status === ImageAltStatus.REMOVED ? '' : image.draftAlt ?? '';
 
     try {
-      await axios.post(
+      const res = await axios.post<{ success?: boolean; mode?: string; message?: string }>(
         `${site.url}/wp-json/poirier-cms/v1/image-alt`,
         {
           canonicalUrl: image.canonicalUrl,
@@ -122,6 +122,14 @@ export class ImageSyncService {
           },
         },
       );
+      // The plugin answers 200 even when the alt landed nowhere (no attachment
+      // matched, no inline rewrite) — trust the body, not the status code, or
+      // the row gets marked synced while the site never changed.
+      if (res.data?.success === false) {
+        throw new Error(
+          res.data.message ?? 'WordPress could not match this image to an attachment.',
+        );
+      }
     } catch (err) {
       const msg = axios.isAxiosError(err)
         ? `HTTP ${err.response?.status ?? 'no response'}: ${err.response?.data?.message ?? err.message}`

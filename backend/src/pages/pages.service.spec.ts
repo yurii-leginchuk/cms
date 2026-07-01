@@ -40,6 +40,7 @@ const mockPage: Page = {
   syncError: null,
   syncAppliedAt: null,
   lastScrapedAt: new Date(),
+  missingFromSitemapAt: null,
   embedding: null,
   embeddingUpdatedAt: null,
   createdAt: new Date(),
@@ -187,6 +188,36 @@ describe('PagesService', () => {
       await service.updateMeta('page-uuid-1', { noindex: false });
 
       expect(mockSync.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('CLEARS customMetaTitle/customMetaDescription when null is sent (editor reset)', async () => {
+      mockRepo.findOne.mockResolvedValue({
+        ...mockPage,
+        customMetaTitle: 'Old custom title',
+        customMetaDescription: 'Old custom description',
+      });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      const result = await service.updateMeta('page-uuid-1', {
+        customMetaTitle: null,
+        customMetaDescription: null,
+      });
+
+      expect(result.customMetaTitle).toBeNull();
+      expect(result.customMetaDescription).toBeNull();
+      expect(mockSync.enqueue).toHaveBeenCalledWith('site-uuid-1', 'page-uuid-1');
+    });
+
+    it('normalizes an empty string to null (clear), same as the canonical/OG fields', async () => {
+      mockRepo.findOne.mockResolvedValue({
+        ...mockPage,
+        customMetaTitle: 'Old custom title',
+      });
+      mockRepo.save.mockImplementation((p: Page) => Promise.resolve(p));
+
+      const result = await service.updateMeta('page-uuid-1', { customMetaTitle: '' });
+
+      expect(result.customMetaTitle).toBeNull();
     });
   });
 });

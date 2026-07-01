@@ -115,7 +115,7 @@ export class PagesService {
 
     if (
       dto.customMetaTitle !== undefined &&
-      dto.customMetaTitle !== page.customMetaTitle
+      (dto.customMetaTitle || null) !== page.customMetaTitle
     ) {
       entries.push({
         pageId: page.id,
@@ -127,7 +127,7 @@ export class PagesService {
 
     if (
       dto.customMetaDescription !== undefined &&
-      dto.customMetaDescription !== page.customMetaDescription
+      (dto.customMetaDescription || null) !== page.customMetaDescription
     ) {
       entries.push({
         pageId: page.id,
@@ -199,9 +199,10 @@ export class PagesService {
     }
 
     const metaChanged =
-      (dto.customMetaTitle !== undefined && dto.customMetaTitle !== page.customMetaTitle) ||
+      (dto.customMetaTitle !== undefined &&
+        (dto.customMetaTitle || null) !== page.customMetaTitle) ||
       (dto.customMetaDescription !== undefined &&
-        dto.customMetaDescription !== page.customMetaDescription);
+        (dto.customMetaDescription || null) !== page.customMetaDescription);
 
     // Any field that gets pushed to WordPress should trigger a sync, not just
     // the title/description content.
@@ -217,8 +218,17 @@ export class PagesService {
       (dto.ogImageId !== undefined && (dto.ogImageId ?? null) !== page.ogImageId);
 
     Object.assign(page, {
-      customMetaTitle: dto.customMetaTitle ?? page.customMetaTitle,
-      customMetaDescription: dto.customMetaDescription ?? page.customMetaDescription,
+      // Explicit tri-state like canonical/OG below: undefined = untouched,
+      // null/'' = clear the override, string = set it. `??` here would make
+      // clearing impossible (the editor sends null to reset to the scraped meta).
+      customMetaTitle:
+        dto.customMetaTitle !== undefined
+          ? (dto.customMetaTitle || null)
+          : page.customMetaTitle,
+      customMetaDescription:
+        dto.customMetaDescription !== undefined
+          ? (dto.customMetaDescription || null)
+          : page.customMetaDescription,
       ...(dto.isTransactional !== undefined && { isTransactional: dto.isTransactional }),
       indexDirective: nextDirective,
       noindex: nextNoindex,

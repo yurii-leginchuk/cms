@@ -479,13 +479,15 @@ Filters are OPTIONAL. Do NOT add a filter unless you need to restrict to a speci
             .filter((r) => r.position >= minPos && r.position <= maxPos && r.impressions >= minImpr)
             .sort((a, b) => b.score - a.score)
             .slice(0, input.limit ?? 30);
+          const truncated = rows.length >= 1000;
           return {
             dateRange: { startDate, endDate },
             _cached: result._cached ?? false,
             count: opportunities.length,
+            truncated,
             note: opportunities.length === 0
               ? 'No striking-distance keywords found with the current thresholds. Try lowering minImpressions or widening the position range.'
-              : 'Sorted by opportunity score (impressions ÷ position). Higher = bigger quick win. The page column is the URL already ranking for that query.',
+              : `Sorted by opportunity score (impressions ÷ position). Higher = bigger quick win. The page column is the URL already ranking for that query.${truncated ? ' NOTE: the GSC pull hit the 1000-row cap — this analysis covers only the top rows, disclose that to the user.' : ''}`,
             opportunities,
           };
         } catch (err) {
@@ -519,13 +521,15 @@ Filters are OPTIONAL. Do NOT add a filter unless you need to restrict to a speci
             minImpressions: input.minImpressions ?? 10,
             limit: input.limit ?? 25,
           });
+          const truncated = (result.rows ?? []).length >= 1000;
           return {
             dateRange: { startDate, endDate },
             _cached: result._cached ?? false,
             count: conflicts.length,
+            truncated,
             note: conflicts.length === 0
               ? 'No cannibalization detected — no query has 2+ competing pages above the impression threshold.'
-              : 'Each entry shows a query and the pages competing for it (best position first). Recommend consolidating or differentiating the competing pages.',
+              : `Each entry shows a query and the pages competing for it (best position first). Recommend consolidating or differentiating the competing pages.${truncated ? ' NOTE: the GSC pull hit the 1000-row cap — low-volume conflicts may be missing, disclose that to the user.' : ''}`,
             conflicts,
           };
         } catch (err) {

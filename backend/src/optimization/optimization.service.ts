@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -45,10 +47,29 @@ interface RunAccumulator {
 }
 
 @Injectable()
-export class OptimizationService {
+export class OptimizationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OptimizationService.name);
   /** In-memory cancel flags (Phase 1). Keyed by runId. */
   private readonly cancelled = new Set<string>();
+
+  /**
+   * Runs execute in-process; a restart abandons the loop and would leave the
+   * run RUNNING forever — which now also blocks new runs (concurrency guard).
+   * Reset such zombies to ERROR on boot, mirroring the scraper's PARSING reset.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    const res = await this.runRepo.update(
+      { status: OptimizationRunStatus.RUNNING },
+      {
+        status: OptimizationRunStatus.ERROR,
+        error: 'Interrupted by a server restart.',
+        finishedAt: new Date(),
+      },
+    );
+    if (res.affected) {
+      this.logger.warn(`Reset ${res.affected} optimization run(s) stuck RUNNING after restart`);
+    }
+  }
 
   constructor(
     @InjectRepository(Site) private readonly siteRepo: Repository<Site>,
@@ -104,11 +125,27 @@ export class OptimizationService {
 
   // ── Bulk run ────────────────────────────────────────────────────────────────
 
+  /**
+   * Refuse to start when the site already has a run in flight — two concurrent
+   * runs would double-fetch and double-count every image.
+   */
+  private async assertNoActiveRun(siteId: string): Promise<void> {
+    const active = await this.runRepo.findOne({
+      where: { siteId, status: OptimizationRunStatus.RUNNING },
+    });
+    if (active) {
+      throw new BadRequestException(
+        'An optimization run is already in progress for this site.',
+      );
+    }
+  }
+
   /** Kick off a background run and return its id immediately (poll for progress). */
   async startRun(
     siteId: string,
     scope: OptimizationRunScope,
   ): Promise<{ runId: string }> {
+    await this.assertNoActiveRun(siteId);
     const config = await this.configService.getOrCreate(siteId);
     const fingerprint = this.fingerprintFor(config);
 
@@ -157,6 +194,7 @@ export class OptimizationService {
     scope: OptimizationRunScope,
     triggeredBy: OptimizationRunTrigger,
   ): Promise<ImageOptimizationRun> {
+    await this.assertNoActiveRun(siteId);
     const config = await this.configService.getOrCreate(siteId);
     const fingerprint = this.fingerprintFor(config);
     const run = await this.runRepo.save(
@@ -316,6 +354,9 @@ export class OptimizationService {
         finishedAt: new Date(),
       },
     );
+    // A cancel that raced in between the delete above and the status write
+    // would otherwise leak its flag into the next run with this id.
+    this.cancelled.delete(runId);
     this.logger.log(
       `Optimization run ${runId} ${wasCancelled ? 'cancelled' : 'done'}: ` +
         `${acc.optimized} optimized, ${acc.skipped} skipped, ${acc.failed} failed, ` +
@@ -429,6 +470,8 @@ export class OptimizationService {
       timeout: FETCH_TIMEOUT_MS,
       maxContentLength: MAX_FETCH_BYTES,
       maxBodyLength: MAX_FETCH_BYTES,
+      // Same UA as the scraper — a bare axios default gets blocked by some WAFs.
+      headers: { 'User-Agent': 'CMS-Bot/1.0' },
     });
     return Buffer.from(res.data);
   }

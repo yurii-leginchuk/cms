@@ -26,7 +26,8 @@ export interface DryRunResult {
   parseErrors: ParseError[];
   counts: { add: number; update: number; delete: number; noop: number; blocked: number; warnings: number };
   diff: DiffRow[];
-  backupId: string;
+  /** Dry-run writes nothing — the mandatory backup is taken at apply time. */
+  backupId: string | null;
 }
 
 export interface ApplyResult {
@@ -59,9 +60,6 @@ export class RedirectImportService {
 
     const diff = computeImportDiff(this.hostOf(site.url), items.map(toExisting), parsed.rows, mode);
 
-    // Snapshot the CURRENT state so the diff is reproducibly "as of" this backup.
-    const backup = await this.createBackup(siteId, items, 'pre_import', opts.filename ?? null);
-
     const counts = { add: 0, update: 0, delete: 0, noop: 0, blocked: 0, warnings: 0 };
     for (const d of diff) {
       counts[d.op] += 1;
@@ -69,6 +67,8 @@ export class RedirectImportService {
       else if (d.status === 'warning') counts.warnings += 1;
     }
 
+    // Dry-run is strictly read-only: the mandatory pre-write backup is taken by
+    // apply(). Creating one here piled up a junk backup per preview click.
     return {
       format, mode,
       totalRows: parsed.rows.length,
@@ -76,7 +76,7 @@ export class RedirectImportService {
       parseErrors: parsed.errors,
       counts,
       diff,
-      backupId: backup.id,
+      backupId: null,
     };
   }
 
@@ -148,6 +148,9 @@ export class RedirectImportService {
     return this.apply(siteId, JSON.stringify(backup.content), { format: 'json', mode: 'merge', filename: `restore ${backupId}` });
   }
 
+  /** Keep only this many backups per site (newest win). */
+  private static readonly BACKUP_CAP = 20;
+
   private async createBackup(
     siteId: string,
     items: RedirectItem[],
@@ -159,9 +162,28 @@ export class RedirectImportService {
       matchType: i.matchType, regex: i.regex, groupId: i.groupId, position: i.position,
       enabled: i.enabled, title: i.title,
     })));
-    return this.backupRepo.save(this.backupRepo.create({
+    const saved = await this.backupRepo.save(this.backupRepo.create({
       siteId, reason, note, redirectCount: items.length, content: JSON.parse(json),
     }));
+    await this.pruneBackups(siteId);
+    return saved;
+  }
+
+  /** Best-effort cap: drop the oldest backups beyond BACKUP_CAP. */
+  private async pruneBackups(siteId: string): Promise<void> {
+    try {
+      const stale = await this.backupRepo.find({
+        where: { siteId },
+        order: { createdAt: 'DESC' },
+        skip: RedirectImportService.BACKUP_CAP,
+        select: ['id'],
+      });
+      if (stale.length) {
+        await this.backupRepo.delete(stale.map((s) => s.id));
+      }
+    } catch {
+      // Pruning must never fail a backup/apply.
+    }
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────

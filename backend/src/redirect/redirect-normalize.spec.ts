@@ -5,6 +5,7 @@ import {
   computeFingerprint,
   computeWholeSetHash,
   normalizeRedirect,
+  projectionKey,
   MAPPING_VERSION,
   RawRedirect,
 } from './redirect-normalize';
@@ -137,6 +138,35 @@ describe('computeWholeSetHash', () => {
 
   it('changes when the set membership changes', () => {
     expect(computeWholeSetHash(['a', 'b'])).not.toBe(computeWholeSetHash(['a', 'b', 'c']));
+  });
+});
+
+describe('projectionKey (the whole-set change gate)', () => {
+  it('changes when a redirect is toggled in WP (fingerprint alone would not)', () => {
+    const on = normalizeRedirect(raw({ status: 'enabled' }));
+    const off = normalizeRedirect(raw({ status: 'disabled' }));
+    expect(on.fingerprint).toBe(off.fingerprint); // identity is unchanged…
+    expect(projectionKey(on)).not.toBe(projectionKey(off)); // …but the projection is
+  });
+
+  it('changes when the title, position, or hit data changes', () => {
+    const base = normalizeRedirect(raw());
+    expect(projectionKey(normalizeRedirect(raw({ title: 'renamed' })))).not.toBe(projectionKey(base));
+    expect(projectionKey(normalizeRedirect(raw({ position: 5 })))).not.toBe(projectionKey(base));
+    expect(projectionKey(normalizeRedirect(raw({ last_count: 3 })))).not.toBe(projectionKey(base));
+    expect(
+      projectionKey(normalizeRedirect(raw({ last_access: '2026-07-01 10:00:00' }))),
+    ).not.toBe(projectionKey(base));
+  });
+
+  it('is stable for an identical row (short-circuit still works when nothing changed)', () => {
+    expect(projectionKey(normalizeRedirect(raw()))).toBe(projectionKey(normalizeRedirect(raw())));
+  });
+
+  it('whole-set hash over projection keys is still order-independent', () => {
+    const a = projectionKey(normalizeRedirect(raw({ id: 1, url: '/a' })));
+    const b = projectionKey(normalizeRedirect(raw({ id: 2, url: '/b' })));
+    expect(computeWholeSetHash([a, b])).toBe(computeWholeSetHash([b, a]));
   });
 });
 

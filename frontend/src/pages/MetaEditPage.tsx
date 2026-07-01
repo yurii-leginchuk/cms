@@ -186,8 +186,12 @@ export default function MetaEditPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [aiReview, setAiReview] = useState<{ metaTitle: string | null; metaDescription: string | null; tokensUsed: number } | null>(null)
 
+  // The saved baseline lives in STATE (not a ref): mutating a ref doesn't
+  // re-render, so when every loaded value equals the useState default (e.g. a
+  // page with no overrides) the dirty memo would never recompute and the page
+  // showed "Unsaved changes" right after load.
+  const [initial, setInitial] = useState<Record<string, unknown> | null>(null)
   const initialRef = useRef<Record<string, unknown>>({})
-  const [savedTick, setSavedTick] = useState(0)
 
   useEffect(() => {
     if (!page) return
@@ -202,17 +206,20 @@ export default function MetaEditPage() {
     const oid = page.ogImageId ?? null
     setTitle(t); setDesc(d); setDirective(dir); setNofollow(nf); setCanonical(c)
     setOgTitle(ot); setOgDescription(od); setOgImage(oi); setOgImageId(oid)
-    initialRef.current = { t, d, dir, nf, c, ot, od, oi, oid }
+    const base = { t, d, dir, nf, c, ot, od, oi, oid }
+    initialRef.current = base
+    setInitial(base)
   }, [page?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = useMemo(() => {
-    const r = initialRef.current
+    if (!initial) return false // baseline not loaded yet — nothing to compare
+    const r = initial
     return (
       title !== r.t || desc !== r.d || directive !== r.dir || nofollow !== r.nf ||
       canonical !== r.c || ogTitle !== r.ot || ogDescription !== r.od ||
       ogImage !== r.oi || ogImageId !== r.oid
     )
-  }, [title, desc, directive, nofollow, canonical, ogTitle, ogDescription, ogImage, ogImageId, savedTick])
+  }, [initial, title, desc, directive, nofollow, canonical, ogTitle, ogDescription, ogImage, ogImageId])
 
   // Warn on browser unload when there are unsaved changes.
   useEffect(() => {
@@ -281,11 +288,12 @@ export default function MetaEditPage() {
     try {
       await update.mutateAsync({ pageId: page.id, payload })
       // refresh the baseline so the page is no longer "dirty"
-      initialRef.current = {
+      const base = {
         t: title, d: desc, dir: directive, nf: nofollow, c: canonical,
         ot: ogTitle, od: ogDescription, oi: ogImage, oid: ogImageId,
       }
-      setSavedTick((t) => t + 1)
+      initialRef.current = base
+      setInitial(base)
       toast.success('Saved - queued to push to WordPress')
     } catch {
       toast.error('Failed to save meta')

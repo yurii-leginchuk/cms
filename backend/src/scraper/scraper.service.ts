@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
@@ -69,6 +69,13 @@ export class ScraperService implements OnApplicationBootstrap {
 
       await this.siteRepo.update(siteId, { pagesTotal: urls.length });
 
+      // Sitemap diff: tombstone pages that vanished from the sitemap, revive the
+      // ones that came back. Guarded on a non-empty fetch so a broken/empty
+      // sitemap can never tombstone the whole site.
+      if (urls.length > 0) {
+        await this.reconcileSitemapTombstones(siteId, urls);
+      }
+
       for (let i = 0; i < urls.length; i++) {
         await this.scrapePage(site, urls[i]);
         await this.siteRepo.update(siteId, { pagesProcessed: i + 1 });
@@ -98,13 +105,58 @@ export class ScraperService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Nightly refresh: re-parse EVERY site that isn't currently mid-parse.
+   * Sites end up DONE (or ERROR) after their first parse and never return to
+   * IDLE, so filtering on IDLE here would make the nightly cron a permanent
+   * no-op for existing sites — and the 3 AM ALT autopilot depends on this
+   * refresh for up-to-date page context.
+   */
   async parseAllSites(): Promise<void> {
     const sites = await this.siteRepo.find({
-      where: { status: SiteStatus.IDLE },
+      where: { status: Not(SiteStatus.PARSING) },
     });
     this.logger.log(`Scheduled parse: processing ${sites.length} sites`);
     for (const site of sites) {
-      await this.parseSite(site.id);
+      try {
+        await this.parseSite(site.id);
+      } catch (err) {
+        this.logger.error(
+          `Scheduled parse failed for site ${site.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Set `missingFromSitemapAt` on pages no longer present in the sitemap (keeping
+   * the FIRST time they went missing) and clear it on pages that reappeared. Rows
+   * are never deleted — history and metrics stay queryable.
+   */
+  private async reconcileSitemapTombstones(
+    siteId: string,
+    urls: string[],
+  ): Promise<void> {
+    const revived = await this.pageRepo
+      .createQueryBuilder()
+      .update(Page)
+      .set({ missingFromSitemapAt: null })
+      .where('siteId = :siteId', { siteId })
+      .andWhere('url IN (:...urls)', { urls })
+      .andWhere('"missingFromSitemapAt" IS NOT NULL')
+      .execute();
+    const gone = await this.pageRepo
+      .createQueryBuilder()
+      .update(Page)
+      .set({ missingFromSitemapAt: () => 'now()' })
+      .where('siteId = :siteId', { siteId })
+      .andWhere('url NOT IN (:...urls)', { urls })
+      .andWhere('"missingFromSitemapAt" IS NULL')
+      .execute();
+    if (revived.affected || gone.affected) {
+      this.logger.log(
+        `Sitemap diff for site ${siteId}: ${gone.affected ?? 0} tombstoned, ${revived.affected ?? 0} revived`,
+      );
     }
   }
 

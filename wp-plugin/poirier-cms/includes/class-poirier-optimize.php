@@ -91,8 +91,10 @@ class Poirier_Optimize {
 
 	public static function handle_cdn_map( WP_REST_Request $request ): WP_REST_Response {
 		$mappings = $request->get_param( 'mappings' );
+		$remove   = $request->get_param( 'remove' );
 		$existing = self::get_map();
 		$upserted = 0;
+		$removed  = 0;
 
 		if ( is_array( $mappings ) ) {
 			foreach ( $mappings as $m ) {
@@ -105,10 +107,24 @@ class Poirier_Optimize {
 			}
 		}
 
+		// Removals: the CMS revokes a mapping whose CDN object stopped verifying,
+		// so the attachment falls back to its original WordPress URL. Without
+		// this, a stale entry keeps rewriting to a dead CDN link forever.
+		if ( is_array( $remove ) ) {
+			foreach ( $remove as $rid ) {
+				$rid = (int) $rid;
+				if ( $rid > 0 && isset( $existing[ $rid ] ) ) {
+					unset( $existing[ $rid ] );
+					$removed++;
+				}
+			}
+		}
+
 		update_option( self::OPTION_MAP, $existing );
 		return new WP_REST_Response( [
 			'success'  => true,
 			'upserted' => $upserted,
+			'removed'  => $removed,
 			'total'    => count( $existing ),
 		], 200 );
 	}

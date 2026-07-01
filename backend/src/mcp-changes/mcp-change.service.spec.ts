@@ -30,13 +30,16 @@ describe('McpChangeService accept/reject dispatch', () => {
     const imageRepo = { findOne: jest.fn() };
 
     const pagesService = { updateMeta: jest.fn().mockResolvedValue({}) };
-    const syncService = { triggerPageSync: jest.fn().mockResolvedValue(undefined) };
+    const syncService = { pushPageNow: jest.fn().mockResolvedValue(undefined) };
     const schemaService = {
-      createManaged: jest.fn().mockResolvedValue({}),
+      createManaged: jest.fn().mockResolvedValue({ id: 'sch-new' }),
       updateManaged: jest.fn().mockResolvedValue({}),
       removeManaged: jest.fn().mockResolvedValue(undefined),
     };
-    const schemaSyncService = { publish: jest.fn().mockResolvedValue({}) };
+    const schemaSyncService = {
+      publish: jest.fn().mockResolvedValue({}),
+      publishSingle: jest.fn().mockResolvedValue({}),
+    };
     const imageService = { setAlt: jest.fn().mockResolvedValue({}) };
     const imageSyncService = { applyOne: jest.fn().mockResolvedValue({}) };
     const asanaTaskService = {
@@ -55,7 +58,7 @@ describe('McpChangeService accept/reject dispatch', () => {
       schemaSyncService as any, imageService as any, imageSyncService as any,
       asanaTaskService as any, redirectWriteService as any,
     );
-    return { service, req, repo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService, asanaTaskService, redirectWriteService };
+    return { service, req, repo, schemaRepo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService, asanaTaskService, redirectWriteService };
   }
 
   it('meta.update → updateMeta + per-page sync, marks accepted', async () => {
@@ -65,7 +68,7 @@ describe('McpChangeService accept/reject dispatch', () => {
     });
     const out = await ctx.service.accept('req-1');
     expect(ctx.pagesService.updateMeta).toHaveBeenCalledWith('page-1', { ogTitle: 'X', indexDirective: 'noindex' });
-    expect(ctx.syncService.triggerPageSync).toHaveBeenCalledWith('site-1', 'page-1');
+    expect(ctx.syncService.pushPageNow).toHaveBeenCalledWith('site-1', 'page-1');
     expect(out.status).toBe('accepted');
     expect(out.decidedAt).toBeInstanceOf(Date);
   });
@@ -93,7 +96,7 @@ describe('McpChangeService accept/reject dispatch', () => {
     });
   });
 
-  it('schema.add → createManaged + publish', async () => {
+  it('schema.add → createManaged + targeted publish of the new row only', async () => {
     const ctx = makeService({
       module: 'schema', action: 'schema.add', targetType: 'page', targetId: 'page-1',
       payload: { type: 'Organization', jsonld: { '@type': 'Organization' } },
@@ -102,27 +105,44 @@ describe('McpChangeService accept/reject dispatch', () => {
     expect(ctx.schemaService.createManaged).toHaveBeenCalledWith('site-1', 'page-1', {
       type: 'Organization', jsonld: { '@type': 'Organization' },
     });
-    expect(ctx.schemaSyncService.publish).toHaveBeenCalledWith('site-1', 'page-1');
+    expect(ctx.schemaSyncService.publishSingle).toHaveBeenCalledWith('site-1', 'page-1', 'sch-new');
+    expect(ctx.schemaSyncService.publish).not.toHaveBeenCalled();
   });
 
-  it('schema.update → updateManaged + publish', async () => {
+  it('schema.update → updateManaged + targeted publish of that schema only', async () => {
     const ctx = makeService({
       module: 'schema', action: 'schema.update', targetType: 'page', targetId: 'page-1',
       payload: { schemaId: 'sch-9', jsonld: { '@type': 'FAQPage' } },
     });
     await ctx.service.accept('req-1');
     expect(ctx.schemaService.updateManaged).toHaveBeenCalledWith('sch-9', { jsonld: { '@type': 'FAQPage' } });
-    expect(ctx.schemaSyncService.publish).toHaveBeenCalledWith('site-1', 'page-1');
+    expect(ctx.schemaSyncService.publishSingle).toHaveBeenCalledWith('site-1', 'page-1', 'sch-9');
+    expect(ctx.schemaSyncService.publish).not.toHaveBeenCalled();
   });
 
-  it('schema.delete → removeManaged + publish', async () => {
+  it('schema.delete of a live row → removeManaged + targeted publish', async () => {
     const ctx = makeService({
       module: 'schema', action: 'schema.delete', targetType: 'page', targetId: 'page-1',
       payload: { schemaId: 'sch-9' },
     });
+    // Row still exists after removeManaged → it was soft-removed (was live on WP).
+    ctx.schemaRepo.findOne = jest.fn().mockResolvedValue({ id: 'sch-9' });
     await ctx.service.accept('req-1');
     expect(ctx.schemaService.removeManaged).toHaveBeenCalledWith('sch-9');
-    expect(ctx.schemaSyncService.publish).toHaveBeenCalledWith('site-1', 'page-1');
+    expect(ctx.schemaSyncService.publishSingle).toHaveBeenCalledWith('site-1', 'page-1', 'sch-9');
+  });
+
+  it('schema.delete of a never-published draft → removeManaged only, no publish', async () => {
+    const ctx = makeService({
+      module: 'schema', action: 'schema.delete', targetType: 'page', targetId: 'page-1',
+      payload: { schemaId: 'sch-9' },
+    });
+    // Row gone after removeManaged → it was hard-deleted (never on WP).
+    ctx.schemaRepo.findOne = jest.fn().mockResolvedValue(null);
+    await ctx.service.accept('req-1');
+    expect(ctx.schemaService.removeManaged).toHaveBeenCalledWith('sch-9');
+    expect(ctx.schemaSyncService.publishSingle).not.toHaveBeenCalled();
+    expect(ctx.schemaSyncService.publish).not.toHaveBeenCalled();
   });
 
   it('alt.set → setAlt + applyOne', async () => {
@@ -143,7 +163,7 @@ describe('McpChangeService accept/reject dispatch', () => {
     expect(out.status).toBe('rejected');
     expect(out.decidedAt).toBeInstanceOf(Date);
     expect(ctx.pagesService.updateMeta).not.toHaveBeenCalled();
-    expect(ctx.syncService.triggerPageSync).not.toHaveBeenCalled();
+    expect(ctx.syncService.pushPageNow).not.toHaveBeenCalled();
   });
 
   it('accepting an already-decided request throws', async () => {
@@ -155,7 +175,7 @@ describe('McpChangeService accept/reject dispatch', () => {
     const ctx = makeService({
       module: 'meta', action: 'meta.update', targetType: 'page', targetId: 'page-1', payload: { ogTitle: 'X' },
     });
-    ctx.syncService.triggerPageSync.mockRejectedValueOnce(new Error('WP unreachable'));
+    ctx.syncService.pushPageNow.mockRejectedValueOnce(new Error('WP unreachable'));
     await expect(ctx.service.accept('req-1')).rejects.toThrow('WP unreachable');
     expect(ctx.req.status).toBe('pending');
     expect(ctx.req.error).toBe('WP unreachable');

@@ -266,7 +266,8 @@ export interface DryRunResult {
   parseErrors: ParseError[]
   counts: { add: number; update: number; delete: number; noop: number; blocked: number; warnings: number }
   diff: ImportDiffRow[]
-  backupId: string
+  /** null — dry-run is read-only; the backup is taken at apply time */
+  backupId: string | null
 }
 export interface ApplyResult {
   backupId: string
