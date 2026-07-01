@@ -28,6 +28,6 @@ import { TokenUsageModule } from '../token-usage/token-usage.module';
     ImageAutopilotService,
     WpMediaService,
   ],
-  exports: [ImageService, ImageAutopilotService, ImageSyncService],
+  exports: [ImageService, ImageAutopilotService, ImageSyncService, WpMediaService],
 })
 export class ImageModule {}

@@ -43,6 +43,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cms_password}
       POSTGRES_DB: ${POSTGRES_DB:-cms_db}
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CMS_PUBLIC_URL: ${CMS_PUBLIC_URL:-http://localhost:3000}
       MCP_API_KEY: ${MCP_API_KEY:-}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT:-6379}

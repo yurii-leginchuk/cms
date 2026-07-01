@@ -24,6 +24,7 @@ import { CruxModule } from './crux/crux.module';
 import { OptimizationEffectsModule } from './optimization-effects/optimization-effects.module';
 import { SchemaModule } from './schema/schema.module';
 import { ImageModule } from './images/image.module';
+import { OptimizationModule } from './optimization/optimization.module';
 import { ImpactModule } from './impact/impact.module';
 import { McpChangeModule } from './mcp-changes/mcp-change.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
@@ -59,6 +60,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     OptimizationEffectsModule,
     SchemaModule,
     ImageModule,
+    OptimizationModule,
     ImpactModule,
     McpChangeModule,
   ],

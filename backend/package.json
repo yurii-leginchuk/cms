@@ -18,6 +18,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.69",
     "@ai-sdk/openai": "^3.0.69",
+    "@aws-sdk/client-s3": "3.1077.0",
     "@mozilla/readability": "^0.6.0",
     "@nestjs/bullmq": "^10.2.3",
     "@nestjs/common": "^10.0.0",
@@ -40,6 +41,7 @@
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.2",
     "typeorm": "^0.3.17",
     "zod": "^4.4.3"
   },
