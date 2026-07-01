@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, matchPath } from 'react-router-dom'
-import { Globe, LayoutDashboard, LayoutList, Tag, Settings, BookOpen, MessageSquare, BarChart2, FileText, BotMessageSquare, Gauge, TrendingUp, Files, Braces, Image as ImageIcon, Zap, ScanSearch, CheckSquare } from 'lucide-react'
+import { Globe, LayoutDashboard, LayoutList, Tag, Settings, BookOpen, MessageSquare, BarChart2, FileText, BotMessageSquare, Gauge, TrendingUp, Files, Braces, Image as ImageIcon, Zap, ScanSearch, CheckSquare, Signpost } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
@@ -22,23 +22,29 @@ function SidebarIcon({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<div />}>
-        <NavLink
-          to={to}
-          end={end}
-          className={({ isActive }) =>
-            cn(
-              'size-9 flex items-center justify-center rounded-lg transition-colors',
-              isActive
-                ? 'bg-[#4e8af4]/15 text-[#4e8af4]'
-                : 'text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-white/5',
-            )
-          }
-        >
-          <Icon className="size-4" />
-        </NavLink>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8} className="bg-[#232635] text-[#e8eaed] border border-white/10 text-xs px-2 py-1">
+      {/* The NavLink IS the trigger (no wrapper div): the tooltip follows real
+          hover/focus on the link, so it also shows on keyboard navigation and
+          `aria-describedby` lands on the interactive element. */}
+      <TooltipTrigger
+        render={
+          <NavLink
+            to={to}
+            end={end}
+            aria-label={label}
+            className={({ isActive }) =>
+              cn(
+                'size-9 flex items-center justify-center rounded-lg transition-colors',
+                isActive
+                  ? 'bg-[#4e8af4]/15 text-[#4e8af4]'
+                  : 'text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-white/5',
+              )
+            }
+          >
+            <Icon className="size-4" />
+          </NavLink>
+        }
+      />
+      <TooltipContent side="right" sideOffset={10}>
         {label}
       </TooltipContent>
     </Tooltip>
@@ -135,6 +141,11 @@ export default function RootLayout() {
               to={`/sites/${siteId}/index-status`}
               label="Index Status"
               icon={ScanSearch}
+            />
+            <SidebarIcon
+              to={`/sites/${siteId}/redirects`}
+              label="Redirects"
+              icon={Signpost}
             />
             <SidebarIcon
               to={`/sites/${siteId}/tasks`}
