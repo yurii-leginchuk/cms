@@ -32,10 +32,13 @@ function SchemaRow({ siteId, page }: { siteId: string; page: SchemaPageOverview 
   const path = page.url.replace(/^https?:\/\/[^/]+/, '') || '/'
   const hasPending = page.pendingCount > 0
 
+  // Stretched-link pattern: the row is a DIV and the detail link covers it via
+  // an absolute overlay, while the external "Open page" anchor sits ABOVE the
+  // overlay (z-10). Nesting the <a> inside a <Link> was invalid HTML
+  // (validateDOMNesting warning) and made click behavior browser-dependent.
   return (
-    <Link
-      to={`/sites/${siteId}/schemas/${page.pageId}`}
-      className={`block rounded-xl border transition-colors ${
+    <div
+      className={`relative block rounded-xl border transition-colors ${
         hasPending
           ? 'border-amber-500/40 bg-amber-500/[0.04] hover:border-amber-500/60 hover:bg-amber-500/[0.07]'
           : 'border-white/8 bg-[#1a1d27] hover:border-[#4e8af4]/30 hover:bg-[#1d2130]'
@@ -43,9 +46,13 @@ function SchemaRow({ siteId, page }: { siteId: string; page: SchemaPageOverview 
     >
       <div className="flex items-start gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] text-[#e8eaed] font-medium truncate" title={page.url}>
+          <Link
+            to={`/sites/${siteId}/schemas/${page.pageId}`}
+            className="block text-[13px] text-[#e8eaed] font-medium truncate rounded-xl after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-[#4e8af4]/60 focus-visible:after:rounded-xl"
+            title={page.url}
+          >
             {path}
-          </div>
+          </Link>
 
           {/* Inline schema summary */}
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -89,16 +96,15 @@ function SchemaRow({ siteId, page }: { siteId: string; page: SchemaPageOverview 
             href={page.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#9aa0a6] hover:text-[#4e8af4] p-1"
+            className="relative z-10 text-[#9aa0a6] hover:text-[#4e8af4] p-1"
             title="Open page"
-            onClick={(e) => e.stopPropagation()}
           >
             <ExternalLink className="size-3.5" />
           </a>
           <ChevronRight className="size-4 text-[#9aa0a6]/50" />
         </div>
       </div>
-    </Link>
+    </div>
   )
 }
 
