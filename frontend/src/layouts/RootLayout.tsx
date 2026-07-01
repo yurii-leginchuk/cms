@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, matchPath } from 'react-router-dom'
-import { Globe, LayoutDashboard, LayoutList, Tag, Settings, BookOpen, MessageSquare, BarChart2, FileText, BotMessageSquare, Gauge, TrendingUp, Files, Braces, Image as ImageIcon } from 'lucide-react'
+import { Globe, LayoutDashboard, LayoutList, Tag, Settings, BookOpen, MessageSquare, BarChart2, FileText, BotMessageSquare, Gauge, TrendingUp, Files, Braces, Image as ImageIcon, Zap } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
@@ -95,6 +95,11 @@ export default function RootLayout() {
               to={`/sites/${siteId}/images`}
               label="Image ALT"
               icon={ImageIcon}
+            />
+            <SidebarIcon
+              to={`/sites/${siteId}/optimization`}
+              label="Image Optimization"
+              icon={Zap}
             />
             <SidebarIcon
               to={`/sites/${siteId}/meta`}

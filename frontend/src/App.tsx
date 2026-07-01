@@ -5,6 +5,7 @@ import SiteDetailPage from '@/pages/SiteDetailPage'
 import SitePagesPage from '@/pages/SitePagesPage'
 import SiteSchemasPage from '@/pages/SiteSchemasPage'
 import SiteImagesPage from '@/pages/SiteImagesPage'
+import SiteOptimizationPage from '@/pages/SiteOptimizationPage'
 import SchemaDetailPage from '@/pages/SchemaDetailPage'
 import SiteMetaPage from '@/pages/SiteMetaPage'
 import MetaEditPage from '@/pages/MetaEditPage'
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="sites/:id/schemas" element={<SiteSchemasPage />} />
           <Route path="sites/:id/schemas/:pageId" element={<SchemaDetailPage />} />
           <Route path="sites/:id/images" element={<SiteImagesPage />} />
+          <Route path="sites/:id/optimization" element={<SiteOptimizationPage />} />
           <Route path="sites/:id/meta" element={<SiteMetaPage />} />
           <Route path="sites/:id/meta/:pageId" element={<MetaEditPage />} />
           <Route path="sites/:id/prompts" element={<SitePromptsPage />} />
