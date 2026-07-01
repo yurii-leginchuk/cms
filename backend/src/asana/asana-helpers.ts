@@ -119,6 +119,7 @@ export interface AsanaTaskRaw {
   name?: string;
   notes?: string;
   completed?: boolean;
+  completed_at?: string | null;
   due_on?: string | null;
   permalink_url?: string;
   num_subtasks?: number;

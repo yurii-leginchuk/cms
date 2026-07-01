@@ -23,6 +23,7 @@ import { SetStatusDto } from './dto/set-status.dto';
 import { SetAssigneeDto } from './dto/set-assignee.dto';
 import { CreateSubtaskDto } from './dto/create-subtask.dto';
 import { LinkEntityDto } from './dto/link-entity.dto';
+import { SetScopeDto } from './dto/set-scope.dto';
 
 /**
  * Per-site Asana endpoints: mapping, sections, sync, task reads (Phase 1) and
@@ -166,6 +167,22 @@ export class AsanaSiteController {
     @Body() dto: CreateSubtaskDto,
   ) {
     return this.tasks.createSubtask(siteId, taskGid, dto);
+  }
+
+  /** Read a task's Impact scope (sitewide / pages). */
+  @Get('tasks/:taskGid/scope')
+  getScope(@Param('siteId') siteId: string, @Param('taskGid') taskGid: string) {
+    return this.tasks.getScope(siteId, taskGid);
+  }
+
+  /** Set a task's Impact scope (CMS-local; reflects on the Impact timeline). */
+  @Put('tasks/:taskGid/scope')
+  setScope(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: SetScopeDto,
+  ) {
+    return this.tasks.setScope(siteId, taskGid, dto);
   }
 
   /** Link (or unlink, with nulls) a task to a CMS entity. */

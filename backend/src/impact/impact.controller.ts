@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query,
+  Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query,
 } from '@nestjs/common';
 import { ChangeEventsService } from './change-events.service';
 import {
@@ -127,9 +127,18 @@ export class ImpactController {
   @HttpCode(HttpStatus.CREATED)
   createAnnotation(
     @Param('siteId') siteId: string,
-    @Body() body: { date: string; label: string; pageId?: string | null },
+    @Body() body: { date: string; label: string; pageId?: string | null; type?: string | null; link?: string | null },
   ) {
-    return this.annotations.create(siteId, body.date, body.label, body.pageId ?? null);
+    return this.annotations.create(siteId, body);
+  }
+
+  @Patch('annotations/:id')
+  updateAnnotation(
+    @Param('siteId') siteId: string,
+    @Param('id') id: string,
+    @Body() body: { date?: string; label?: string; pageId?: string | null; type?: string | null; link?: string | null },
+  ) {
+    return this.annotations.update(siteId, id, body);
   }
 
   @Delete('annotations/:id')

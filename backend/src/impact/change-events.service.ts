@@ -1,13 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { MetaHistory } from '../pages/meta-history.entity';
 import { Page } from '../pages/page.entity';
 import { SchemaHistory } from '../schema/schema-history.entity';
 import { OptimizationEffect } from '../optimization-effects/optimization-effect.entity';
-import { ChangeEvent } from './change-event';
+import { AltPublishEvent } from './alt-publish-event.entity';
+import { ImpactAnnotation } from './impact-annotation.entity';
+import { AsanaTask } from '../asana/asana-task.entity';
+import { AsanaTaskPage } from '../asana/asana-task-page.entity';
+import { ChangeEvent, ChangeEventCategory } from './change-event';
 import { toGscDay, diffDays } from './gsc-date';
-import { CONFOUND_WINDOW_DAYS } from './impact.constants';
+import { CONFOUND_WINDOW_DAYS, GROUP_WINDOW_DAYS } from './impact.constants';
+import { assignClusters, compareEventsAsc } from './change-cluster';
 
 /** Group key for collapsing a title+description edit applied in the same save. */
 function metaGroupKey(pageId: string, createdAt: Date): string {
@@ -24,6 +29,13 @@ const TECHNICAL_FIELD_LABELS: Record<string, string> = {
   ogImage: 'OG image',
 };
 
+/** Category for a measured effect that has no per-field meta_history to split. */
+function metaEffectCategory(summary: string | null | undefined): ChangeEventCategory {
+  const s = (summary ?? '').toLowerCase();
+  if (s.includes('description') && !s.includes('title')) return 'meta-description';
+  return 'meta-title';
+}
+
 @Injectable()
 export class ChangeEventsService {
   constructor(
@@ -31,11 +43,20 @@ export class ChangeEventsService {
     @InjectRepository(Page) private readonly pageRepo: Repository<Page>,
     @InjectRepository(SchemaHistory) private readonly schemaRepo: Repository<SchemaHistory>,
     @InjectRepository(OptimizationEffect) private readonly effectRepo: Repository<OptimizationEffect>,
+    @InjectRepository(AltPublishEvent) private readonly altRepo: Repository<AltPublishEvent>,
+    @InjectRepository(ImpactAnnotation) private readonly annotationRepo: Repository<ImpactAnnotation>,
+    @InjectRepository(AsanaTask) private readonly taskRepo: Repository<AsanaTask>,
+    @InjectRepository(AsanaTaskPage) private readonly taskPageRepo: Repository<AsanaTaskPage>,
   ) {}
 
   /**
    * Assemble the unified change-event feed for a site (optionally one page).
-   * The frontend never merges sources itself — it receives one typed stream.
+   * The frontend never merges sources itself — it receives one typed stream, with
+   * a `category` (for the per-category toggles) and a time-based `clusterId`.
+   *
+   * The request scope sets the cluster PARTITION: called site-wide (no pageId) the
+   * feed clusters across all pages+categories (global markers); called for one page
+   * it clusters within that page (per-page markers).
    */
   async listEvents(siteId: string, pageId?: string): Promise<ChangeEvent[]> {
     const pages = await this.pageRepo.find({
@@ -46,7 +67,7 @@ export class ChangeEventsService {
     const pageIds = pages.map((p) => p.id);
     if (pageIds.length === 0 && !pageId) return [];
 
-    const [metaRows, schemaRows, effects] = await Promise.all([
+    const [metaRows, schemaRows, effects, altRows, annotationRows, taskRows, taskPageRows] = await Promise.all([
       pageIds.length
         ? this.metaRepo.find({ where: { pageId: In(pageIds) }, order: { createdAt: 'DESC' }, take: 1000 })
         : Promise.resolve([]),
@@ -56,23 +77,32 @@ export class ChangeEventsService {
         take: 500,
       }),
       this.effectRepo.find({ where: pageId ? { siteId, pageId } : { siteId }, take: 1000 }),
+      this.altRepo.find({ where: { siteId }, order: { publishedAt: 'DESC' }, take: 500 }),
+      this.annotationRepo.find({ where: { siteId }, order: { date: 'DESC' }, take: 500 }),
+      this.taskRepo.find({ where: { siteId, completed: true, parentTaskGid: IsNull() }, take: 1000 }),
+      this.taskPageRepo.find({ where: { siteId }, take: 5000 }),
     ]);
 
     const events: ChangeEvent[] = [];
     const matchedEffectIds = new Set<string>();
 
-    // ── Meta + technical (from meta_history) ──────────────────────────────────
+    // ── Meta (title/description) + technical (from meta_history) ───────────────
+    // Title/description edits saved together collapse per save, then split into a
+    // per-field category event each (meta-title / meta-description) so each toggles
+    // independently; same-day clustering re-unifies them into one marker.
     const metaGroups = new Map<string, MetaHistory[]>();
     for (const row of metaRows) {
       if (row.field === 'title' || row.field === 'description') {
         const key = metaGroupKey(row.pageId, row.createdAt);
         (metaGroups.get(key) ?? metaGroups.set(key, []).get(key)!).push(row);
       } else {
-        // canonical / noindex → standalone technical event
+        // canonical / noindex / og* → standalone technical event
         const url = urlById.get(row.pageId) ?? '';
         events.push({
           id: `technical:${row.id}`,
           type: 'technical',
+          category: 'technical',
+          clusterId: '',
           subtype: row.field,
           pageId: row.pageId,
           pageUrl: url,
@@ -93,34 +123,37 @@ export class ChangeEventsService {
     for (const [, rows] of metaGroups) {
       const first = rows[0];
       const url = urlById.get(first.pageId) ?? '';
-      const fields = rows.map((r) => r.field);
-      const subtype = ['title', 'description'].filter((f) => fields.includes(f as any)).join(' + ');
-      const titleRow = rows.find((r) => r.field === 'title');
-      const descRow = rows.find((r) => r.field === 'description');
-      const lead = titleRow ?? descRow!;
       const day = toGscDay(first.createdAt);
+      const ts = first.createdAt.toISOString();
       // Link to the measured optimization_effect for this page applied near this day.
       const effect = effects.find(
         (e) => e.pageId === first.pageId && Math.abs(diffDays(toGscDay(e.appliedAt), day)) <= 2,
       );
       if (effect) matchedEffectIds.add(effect.id);
-      events.push({
-        id: `meta:${first.id}`,
-        type: 'meta',
-        subtype,
-        pageId: first.pageId,
-        pageUrl: url,
-        ts: first.createdAt.toISOString(),
-        day,
-        precision: 'timestamp',
-        summary: `Meta ${subtype} changed`,
-        before: lead.oldValue,
-        after: lead.newValue,
-        measurable: true,
-        effectStatus: effect ? effect.status : null,
-        effectId: effect ? effect.id : null,
-        confoundedWith: 0,
-      });
+
+      for (const field of ['title', 'description'] as const) {
+        const fieldRow = rows.find((r) => r.field === field);
+        if (!fieldRow) continue;
+        events.push({
+          id: `meta-${field}:${fieldRow.id}`,
+          type: 'meta',
+          category: field === 'title' ? 'meta-title' : 'meta-description',
+          clusterId: '',
+          subtype: field,
+          pageId: first.pageId,
+          pageUrl: url,
+          ts,
+          day,
+          precision: 'timestamp',
+          summary: `Meta ${field} changed`,
+          before: fieldRow.oldValue,
+          after: fieldRow.newValue,
+          measurable: true,
+          effectStatus: effect ? effect.status : null,
+          effectId: effect ? effect.id : null,
+          confoundedWith: 0,
+        });
+      }
     }
 
     // ── Measured meta effects with no meta_history row ────────────────────────
@@ -132,6 +165,8 @@ export class ChangeEventsService {
       events.push({
         id: `meta-effect:${effect.id}`,
         type: 'meta',
+        category: metaEffectCategory(effect.changeSummary),
+        clusterId: '',
         subtype: effect.changeSummary ?? 'meta',
         pageId: effect.pageId,
         pageUrl: effect.pageUrl,
@@ -155,6 +190,8 @@ export class ChangeEventsService {
       events.push({
         id: `schema:${row.id}`,
         type: 'schema',
+        category: 'schema',
+        clusterId: '',
         subtype: 'schema',
         pageId: row.pageId,
         pageUrl: url,
@@ -173,26 +210,180 @@ export class ChangeEventsService {
       });
     }
 
+    // ── ALT publishes ─────────────────────────────────────────────────────────
+    // One image republish that touched N pages = ONE global event (page-count) +
+    // a per-page marker on each page (in that page's scope). The page-set is read
+    // from the FROZEN event row, never live placements. measurable:false — alt
+    // impact shows in image search, not the clicks/impressions curve.
+    for (const a of altRows) {
+      const memberPages = a.pageIds ?? [];
+      if (pageId) {
+        if (!memberPages.includes(pageId)) continue;
+        events.push({
+          id: `alt:${a.id}`,
+          type: 'alt',
+          category: 'alt',
+          clusterId: '',
+          subtype: 'alt',
+          pageId,
+          pageUrl: urlById.get(pageId) ?? a.canonicalUrl,
+          ts: a.publishedAt.toISOString(),
+          day: toGscDay(a.publishedAt),
+          precision: 'timestamp',
+          summary: 'ALT text published on this page',
+          before: null,
+          after: a.altAfter || null,
+          measurable: false,
+          effectStatus: null,
+          effectId: null,
+          confoundedWith: 0,
+        });
+      } else {
+        const n = memberPages.length;
+        events.push({
+          id: `alt:${a.id}`,
+          type: 'alt',
+          category: 'alt',
+          clusterId: '',
+          subtype: 'alt',
+          pageId: null,
+          pageUrl: '',
+          ts: a.publishedAt.toISOString(),
+          day: toGscDay(a.publishedAt),
+          precision: 'timestamp',
+          summary: `ALT text published${n ? ` (${n} page${n === 1 ? '' : 's'})` : ''}`,
+          before: null,
+          after: a.altAfter || null,
+          measurable: false,
+          effectStatus: null,
+          effectId: null,
+          confoundedWith: 0,
+        });
+      }
+    }
+
+    // ── Manual annotations (external events) folded into the same feed ────────
+    // Sitewide pins (pageId null) show everywhere; page pins only on their page —
+    // so they toggle, cluster and open in the dialog uniformly with real changes.
+    for (const a of annotationRows) {
+      if (pageId ? a.pageId !== null && a.pageId !== pageId : a.pageId !== null) continue;
+      events.push({
+        id: `manual:${a.id}`,
+        type: 'manual',
+        category: 'manual',
+        clusterId: '',
+        subtype: a.type ?? 'event',
+        pageId: a.pageId,
+        pageUrl: a.pageId ? (urlById.get(a.pageId) ?? '') : '',
+        ts: `${a.date}T12:00:00.000Z`,
+        day: a.date,
+        precision: 'day',
+        summary: a.label,
+        before: null,
+        after: null,
+        measurable: false,
+        effectStatus: null,
+        effectId: null,
+        confoundedWith: 0,
+        taskUrl: a.link ?? null,
+      });
+    }
+
+    // ── Completed Asana tasks folded in (workflow proxy — measurable:false) ────
+    // Marker date = the FROZEN completion instant (Asana's clock). `sitewide` →
+    // global only (and confounds every page); `pages` → each scoped page + a
+    // global aggregate. A re-opened task has completedAt cleared → no marker.
+    const pagesByTask = new Map<string, string[]>();
+    for (const tp of taskPageRows) {
+      (pagesByTask.get(tp.taskGid) ?? pagesByTask.set(tp.taskGid, []).get(tp.taskGid)!).push(tp.pageId);
+    }
+    for (const t of taskRows) {
+      if (!t.completedAt) continue;
+      const scopedPages = t.scope === 'pages' ? pagesByTask.get(t.taskGid) ?? [] : [];
+      const day = toGscDay(t.completedAt);
+      const ts = new Date(t.completedAt).toISOString();
+      const base = {
+        type: 'task' as const,
+        category: 'task' as const,
+        clusterId: '',
+        subtype: 'task',
+        ts,
+        day,
+        precision: 'timestamp' as const,
+        before: null,
+        after: null,
+        measurable: false,
+        effectStatus: null,
+        effectId: null,
+        confoundedWith: 0,
+        taskUrl: t.permalinkUrl,
+      };
+      if (pageId) {
+        // Per-page view: only `pages`-scoped tasks that include this page.
+        if (t.scope === 'pages' && scopedPages.includes(pageId)) {
+          events.push({
+            ...base,
+            id: `task:${t.taskGid}`,
+            pageId,
+            pageUrl: urlById.get(pageId) ?? '',
+            summary: `Task completed: ${t.name}`,
+          });
+        }
+      } else {
+        // Global view: one marker per completed task. Sitewide confounds all pages.
+        events.push({
+          ...base,
+          id: `task:${t.taskGid}`,
+          pageId: null,
+          pageUrl: '',
+          summary:
+            `Task completed: ${t.name}` +
+            (t.scope === 'pages' && scopedPages.length ? ` (${scopedPages.length} page${scopedPages.length === 1 ? '' : 's'})` : ''),
+          ...(t.scope === 'sitewide' ? { scope: 'sitewide' as const } : {}),
+        });
+      }
+    }
+
     this.markConfounders(events);
-    events.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+
+    // Cluster within the request's partition (global site-wide, or one page).
+    assignClusters(
+      events,
+      GROUP_WINDOW_DAYS,
+      pageId ? 'page' : 'global',
+      pageId ?? siteId,
+    );
+
+    // Deterministic output order: newest first, total-order tiebroken by (day, ts, id).
+    events.sort((a, b) => -compareEventsAsc(a, b));
     return events;
   }
 
   /**
    * Flag events that share a page with another change inside the measurement
-   * window — their individual impact can't be isolated. O(n²) per page; n is tiny.
+   * window — their individual impact can't be isolated. A `scope:'sitewide'` event
+   * (Phase 2 tasks) confounds EVERY page's window. O(n²) per page; n is tiny.
    */
   private markConfounders(events: ChangeEvent[]): void {
     const byPage = new Map<string, ChangeEvent[]>();
+    const sitewide: ChangeEvent[] = [];
     for (const e of events) {
+      if (e.scope === 'sitewide') {
+        sitewide.push(e);
+        continue;
+      }
       if (!e.pageId) continue;
       (byPage.get(e.pageId) ?? byPage.set(e.pageId, []).get(e.pageId)!).push(e);
     }
     for (const group of byPage.values()) {
       for (const a of group) {
-        a.confoundedWith = group.filter(
+        const samePage = group.filter(
           (b) => b !== a && Math.abs(diffDays(a.day, b.day)) <= CONFOUND_WINDOW_DAYS,
         ).length;
+        const siteWideNear = sitewide.filter(
+          (s) => Math.abs(diffDays(a.day, s.day)) <= CONFOUND_WINDOW_DAYS,
+        ).length;
+        a.confoundedWith = samePage + siteWideNear;
       }
     }
   }

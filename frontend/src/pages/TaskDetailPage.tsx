@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeClock } from '@/components/index-status/RelativeClock'
+import { TaskScopeEditor } from '@/components/asana/TaskScopeEditor'
 import { useSite } from '@/hooks/useSites'
 import {
   useAsanaTask, useAsanaSections, useAsanaUsers, useUpdateAsanaTask, useSetAsanaStatus,
@@ -228,6 +229,9 @@ export default function TaskDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Impact scope */}
+            {tracked && <TaskScopeEditor siteId={id} taskGid={g} />}
 
             {/* Notes */}
             <div>

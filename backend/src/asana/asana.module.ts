@@ -5,6 +5,7 @@ import { CryptoModule } from '../common/crypto/crypto.module';
 import { AsanaConnection } from './asana-connection.entity';
 import { AsanaProjectMap } from './asana-project-map.entity';
 import { AsanaTask } from './asana-task.entity';
+import { AsanaTaskPage } from './asana-task-page.entity';
 import { AsanaApiClient } from './asana-api-client';
 import { AsanaConnectionService } from './asana-connection.service';
 import { AsanaProjectService } from './asana-project.service';
@@ -25,7 +26,7 @@ import { AsanaWebhookController } from './asana-webhook.controller';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AsanaConnection, AsanaProjectMap, AsanaTask, Site]),
+    TypeOrmModule.forFeature([AsanaConnection, AsanaProjectMap, AsanaTask, AsanaTaskPage, Site]),
     CryptoModule,
   ],
   controllers: [AsanaController, AsanaSiteController, AsanaWebhookController],

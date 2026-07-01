@@ -16,13 +16,33 @@ export class ImpactAnnotationsService {
 
   create(
     siteId: string,
-    date: string,
-    label: string,
-    pageId?: string | null,
+    input: { date: string; label: string; pageId?: string | null; type?: string | null; link?: string | null },
   ): Promise<ImpactAnnotation> {
     return this.repo.save(
-      this.repo.create({ siteId, date, label: label.slice(0, 200), pageId: pageId ?? null }),
+      this.repo.create({
+        siteId,
+        date: input.date,
+        label: input.label.slice(0, 200),
+        pageId: input.pageId ?? null,
+        type: input.type?.slice(0, 32) ?? null,
+        link: input.link?.slice(0, 1024) ?? null,
+      }),
     );
+  }
+
+  async update(
+    siteId: string,
+    id: string,
+    patch: { date?: string; label?: string; pageId?: string | null; type?: string | null; link?: string | null },
+  ): Promise<ImpactAnnotation> {
+    const row = await this.repo.findOne({ where: { id, siteId } });
+    if (!row) throw new NotFoundException('Annotation not found');
+    if (patch.date !== undefined) row.date = patch.date;
+    if (patch.label !== undefined) row.label = patch.label.slice(0, 200);
+    if (patch.pageId !== undefined) row.pageId = patch.pageId;
+    if (patch.type !== undefined) row.type = patch.type?.slice(0, 32) ?? null;
+    if (patch.link !== undefined) row.link = patch.link?.slice(0, 1024) ?? null;
+    return this.repo.save(row);
   }
 
   async remove(siteId: string, id: string): Promise<{ ok: true }> {

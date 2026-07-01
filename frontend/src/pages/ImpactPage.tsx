@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Navigate, Link, useSearchParams } from 'react-router-dom'
 import {
-  TrendingUp, ExternalLink, ArrowLeft, AlertTriangle, X, Download, Pin, Wand2, Search,
+  TrendingUp, ArrowLeft, Download, Pin, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
@@ -12,17 +12,20 @@ import { usePage } from '@/hooks/usePages'
 import { useGscSiteStatus } from '@/hooks/useGsc'
 import { useOptimizationEffects } from '@/hooks/useOptimizationEffects'
 import {
-  useImpactEvents, useImpactSeries, useImpactAnnotations, useCreateAnnotation, useDeleteAnnotation,
+  useImpactEvents, useImpactSeries, useImpactAnnotations, useDeleteAnnotation,
 } from '@/hooks/useImpact'
-import { EffectCard, EffectQueriesSection } from '@/components/impact/EffectCard'
+import { EffectCard } from '@/components/impact/EffectCard'
 import { ChangesTable } from '@/components/impact/ChangesTable'
 import {
-  ImpactTimeline, METRIC_SEL_LABELS, TYPE_META, type ImpactMetricSel,
+  ImpactTimeline, METRIC_SEL_LABELS, type ImpactMetricSel,
 } from '@/components/impact/ImpactTimeline'
+import { ClusterSheet } from '@/components/impact/ClusterSheet'
+import { AddEventDialog, type EditingAnnotation } from '@/components/impact/AddEventDialog'
+import { CATEGORY_META, CATEGORY_ORDER, clusterEvents } from '@/components/impact/cluster'
 import { ImpactQueriesPanel } from '@/components/impact/ImpactQueriesPanel'
-import type { ChangeEvent, ChangeEventType } from '@/api/impact'
+import type { ChangeEvent, ChangeEventCategory } from '@/api/impact'
 
-const ALL_TYPES: ChangeEventType[] = ['meta', 'technical', 'schema']
+const ALL_CATEGORIES: ChangeEventCategory[] = CATEGORY_ORDER
 const METRICS: ImpactMetricSel[] = ['all', 'clicks', 'impressions', 'ctr', 'position']
 const RANGES: { label: string; days: number }[] = [
   { label: '28d', days: 28 }, { label: '90d', days: 90 },
@@ -70,7 +73,7 @@ export default function ImpactPage() {
   // doesn't immediately re-enter page scope.
   function goGlobal() {
     setScope('global')
-    setSelectedId(null)
+    setSelectedCluster(null)
     setSelectedPage(null)
     if (urlPageId) {
       searchParams.delete('pageId')
@@ -80,8 +83,19 @@ export default function ImpactPage() {
   const [metric, setMetric] = useState<ImpactMetricSel>('all')
   const [brand, setBrand] = useState<'all' | 'nonbranded'>('all')
   const [rangeDays, setRangeDays] = useState(90)
-  const [enabled, setEnabled] = useState<ChangeEventType[]>(ALL_TYPES)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [enabled, setEnabled] = useState<ChangeEventCategory[]>(() => {
+    try {
+      const raw = localStorage.getItem(`impact-cats-${siteId}`)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr) && arr.length) return arr.filter((c) => ALL_CATEGORIES.includes(c))
+      }
+    } catch { /* ignore */ }
+    return ALL_CATEGORIES
+  })
+  const [selectedCluster, setSelectedCluster] = useState<ChangeEvent[] | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [editingAnnotation, setEditingAnnotation] = useState<EditingAnnotation | null>(null)
   const [hoveredDay, setHoveredDay] = useState<string | null>(null)
   const [smooth, setSmooth] = useState(false)
   const [view, setView] = useState<'cards' | 'table'>('cards')
@@ -99,7 +113,6 @@ export default function ImpactPage() {
   const { data: events = [] } = useImpactEvents(siteId ?? '', pageId)
   const { data: effects = [] } = useOptimizationEffects(siteId ?? '', pageId)
   const { data: annotations = [] } = useImpactAnnotations(siteId ?? '')
-  const createAnnotation = useCreateAnnotation(siteId ?? '')
   const deleteAnnotation = useDeleteAnnotation(siteId ?? '')
 
   // Comparison overlay (previous period / YoY), single-metric mode only.
@@ -111,40 +124,62 @@ export default function ImpactPage() {
   )
 
   const visibleEvents = useMemo(
-    () => events.filter((e) => e.day >= from && e.day <= to && enabled.includes(e.type)),
+    () => events.filter((e) => e.day >= from && e.day <= to && enabled.includes(e.category)),
     [events, from, to, enabled],
   )
-  // Site-wide pins (pageId null) show on every timeline; page pins only on their
-  // own page. So the global view stays uncluttered and the page view gets both.
-  const visibleAnnotations = useMemo(
-    () => annotations.filter((a) =>
-      a.pageId == null || (scope === 'page' && a.pageId === selectedPage?.id)),
-    [annotations, scope, selectedPage],
+  const inRangeEvents = useMemo(
+    () => events.filter((e) => e.day >= from && e.day <= to),
+    [events, from, to],
   )
-  const selectedEvent = useMemo(
-    () => events.find((e) => e.id === selectedId) ?? null,
-    [events, selectedId],
+  // Re-cluster the enabled events (anchor-fixed, GROUP_WINDOW_DAYS) so table clicks
+  // and keyboard nav select the same clusters the timeline draws.
+  const clustersOfVisible = useMemo(() => clusterEvents(visibleEvents), [visibleEvents])
+  const clusterFor = (ev: ChangeEvent): ChangeEvent[] =>
+    clustersOfVisible.find((c) => c.events.some((e) => e.id === ev.id))?.events ?? [ev]
+
+  // Persist the analyst's category selection per site.
+  useEffect(() => {
+    try { localStorage.setItem(`impact-cats-${siteId}`, JSON.stringify(enabled)) } catch { /* ignore */ }
+  }, [enabled, siteId])
+  const selectedIds = useMemo(
+    () => new Set((selectedCluster ?? []).map((e) => e.id)),
+    [selectedCluster],
   )
 
-  // Keyboard nav: ←/→ step between markers (chronological), Esc closes detail.
+  // Manual events carry id `manual:<annotationId>`; edit/delete via that id.
+  function editManual(annotationId: string) {
+    const a = annotations.find((x) => x.id === annotationId)
+    if (!a) return
+    setEditingAnnotation({ id: a.id, date: a.date, label: a.label, type: a.type ?? null, link: a.link ?? null, pageId: a.pageId })
+    setAddOpen(true)
+  }
+  function deleteManual(annotationId: string) {
+    deleteAnnotation.mutate(annotationId)
+    setSelectedCluster((cur) => {
+      const next = (cur ?? []).filter((e) => e.id !== `manual:${annotationId}`)
+      return next.length ? next : null
+    })
+  }
+
+  // Keyboard nav: ←/→ step between clusters (chronological), Esc closes the Sheet.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      if (e.key === 'Escape') { setSelectedId(null); return }
+      if (e.key === 'Escape') { setSelectedCluster(null); return }
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-      const nav = [...visibleEvents].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
-      if (nav.length === 0) return
+      if (clustersOfVisible.length === 0) return
       e.preventDefault()
-      const idx = nav.findIndex((x) => x.id === selectedId)
+      const curIds = new Set((selectedCluster ?? []).map((x) => x.id))
+      const idx = clustersOfVisible.findIndex((c) => c.events.some((x) => curIds.has(x.id)))
       const next = idx === -1
-        ? (e.key === 'ArrowRight' ? 0 : nav.length - 1)
-        : e.key === 'ArrowRight' ? Math.min(nav.length - 1, idx + 1) : Math.max(0, idx - 1)
-      setSelectedId(nav[next].id)
+        ? (e.key === 'ArrowRight' ? 0 : clustersOfVisible.length - 1)
+        : e.key === 'ArrowRight' ? Math.min(clustersOfVisible.length - 1, idx + 1) : Math.max(0, idx - 1)
+      setSelectedCluster(clustersOfVisible[next].events)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [visibleEvents, selectedId])
+  }, [clustersOfVisible, selectedCluster])
 
   const confoundersFor = (pid: string | null, appliedAt: string): number => {
     if (!pid) return 0
@@ -242,16 +277,18 @@ export default function ImpactPage() {
               title="Export the change events as CSV">
               <Download className="size-3" /> Events
             </button>
-            <div className="flex items-center gap-1.5">
-              {ALL_TYPES.map((t) => {
-                const on = enabled.includes(t)
+            <div className="flex items-center gap-1 flex-wrap">
+              {ALL_CATEGORIES.map((c) => {
+                const on = enabled.includes(c)
+                const m = CATEGORY_META[c]
                 return (
-                  <button key={t}
-                    onClick={() => setEnabled((cur) => on ? cur.filter((x) => x !== t) : [...cur, t])}
+                  <button key={c} aria-pressed={on}
+                    onClick={() => setEnabled((cur) => on ? cur.filter((x) => x !== c) : [...cur, c])}
+                    title={m.measurable ? undefined : 'Timing marker — impact not directly visible in the clicks/impressions curve'}
                     className={cn('flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors',
                       on ? 'bg-white/8 text-[#e8eaed]' : 'bg-transparent text-[#9aa0a6]/50 hover:text-[#9aa0a6]')}>
-                    <span className="size-2 rounded-full" style={{ background: on ? TYPE_META[t].color : '#555' }} />
-                    {TYPE_META[t].label}
+                    <span className="size-2 rounded-full" style={{ background: on ? m.color : '#555', opacity: on && !m.measurable ? 0.5 : 1 }} />
+                    {m.label}
                   </button>
                 )
               })}
@@ -271,15 +308,19 @@ export default function ImpactPage() {
                 points={series.data.points}
                 events={visibleEvents}
                 metric={metric}
-                enabledTypes={enabled}
-                selectedId={selectedId}
-                onSelectEvent={(ev) => setSelectedId(ev.id)}
+                scope={scope}
+                selectedIds={selectedIds}
+                onSelectCluster={setSelectedCluster}
                 onHoverDay={setHoveredDay}
                 hoveredDay={hoveredDay}
                 smooth={smooth}
-                annotations={visibleAnnotations}
                 comparePoints={compare !== 'none' ? compareSeries.data?.points : undefined}
               />
+            )}
+            {series.data && series.data.points.length > 0 && visibleEvents.length === 0 && inRangeEvents.length > 0 && (
+              <p className="mt-2 text-[11px] text-[#9aa0a6]">
+                No changes match the selected categories in this range — enable more categories above.
+              </p>
             )}
             {fresh && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px] text-[#9aa0a6]/70">
@@ -305,15 +346,16 @@ export default function ImpactPage() {
                 </div>
               )
             })()}
-            <AnnotationsBar
-              annotations={visibleAnnotations}
-              defaultDate={to}
-              pageScope={scope === 'page' ? selectedPage?.url : undefined}
-              onAdd={(date, label) => createAnnotation.mutate({
-                date, label, pageId: scope === 'page' ? selectedPage?.id : undefined,
-              })}
-              onRemove={(id) => deleteAnnotation.mutate(id)}
-            />
+            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/5">
+              <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/60 mr-1">External events</span>
+              <button
+                onClick={() => { setEditingAnnotation(null); setAddOpen(true) }}
+                className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+                title="Mark a core update, migration, PR, etc. — shows as a Manual marker on the timeline">
+                <Pin className="size-3" /> Add event
+              </button>
+              <span className="text-[10px] text-[#9aa0a6]/50">core updates, migrations, PR — toggle via “Manual”</span>
+            </div>
           </div>
 
           {/* ── Per-page query drill-down ─────────────────────────────── */}
@@ -328,18 +370,28 @@ export default function ImpactPage() {
             />
           )}
 
-          {/* ── Selected marker detail ────────────────────────────────── */}
-          {selectedEvent && (
-            <MarkerDetail
-              event={selectedEvent}
-              siteId={siteId}
-              confounders={selectedEvent.confoundedWith}
-              onClose={() => setSelectedId(null)}
-              onOpenPage={selectedEvent.pageId
-                ? () => { setSelectedPage({ id: selectedEvent.pageId!, url: selectedEvent.pageUrl }); setScope('page'); setSelectedId(null) }
-                : undefined}
-            />
-          )}
+          {/* ── Grouped marker breakdown (Sheet) ──────────────────────── */}
+          <ClusterSheet
+            cluster={selectedCluster}
+            siteId={siteId}
+            onClose={() => setSelectedCluster(null)}
+            onOpenPage={(pageId, pageUrl) => {
+              setSelectedPage({ id: pageId, url: pageUrl })
+              setScope('page')
+              setSelectedCluster(null)
+            }}
+            onEditManual={editManual}
+            onDeleteManual={deleteManual}
+          />
+
+          <AddEventDialog
+            open={addOpen}
+            onOpenChange={(o) => { setAddOpen(o); if (!o) setEditingAnnotation(null) }}
+            siteId={siteId}
+            editing={editingAnnotation}
+            page={scope === 'page' && selectedPage ? selectedPage : null}
+            defaultDate={to}
+          />
 
           {/* ── Changes (cards | table) ───────────────────────────────── */}
           <div>
@@ -368,7 +420,7 @@ export default function ImpactPage() {
                 </p>
               </div>
             ) : view === 'table' ? (
-              <ChangesTable events={visibleEvents} effects={effects} onSelectEvent={(ev) => setSelectedId(ev.id)} />
+              <ChangesTable events={visibleEvents} effects={effects} onSelectEvent={(ev) => setSelectedCluster(clusterFor(ev))} />
             ) : (
               <div className="space-y-3 max-w-4xl">
                 {effects.map((e) => (
@@ -421,54 +473,6 @@ function ScopeToggle({
   )
 }
 
-function AnnotationsBar({
-  annotations, defaultDate, pageScope, onAdd, onRemove,
-}: {
-  annotations: { id: string; date: string; label: string; pageId: string | null }[]
-  defaultDate: string
-  /** When set, the page URL the new pin will be scoped to (per-page view). */
-  pageScope?: string
-  onAdd: (date: string, label: string) => void
-  onRemove: (id: string) => void
-}) {
-  const [adding, setAdding] = useState(false)
-  const [date, setDate] = useState(defaultDate)
-  const [label, setLabel] = useState('')
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-white/5">
-      <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/60 mr-1">Events</span>
-      {annotations.map((a) => (
-        <span key={a.id}
-          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-[#fbbf24]/10 text-[#fbbf24]"
-          title={a.pageId ? 'Pinned to this page' : 'Site-wide event'}>
-          {a.pageId && <Pin className="size-2.5 fill-current" />}
-          {a.label} <span className="text-[#fbbf24]/50">{a.date}</span>
-          <button onClick={() => onRemove(a.id)} className="hover:text-white"><X className="size-2.5" /></button>
-        </span>
-      ))}
-      {adding ? (
-        <span className="inline-flex items-center gap-1">
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="bg-white/5 text-[#e8eaed] text-[11px] rounded px-1.5 py-0.5 border border-white/10" />
-          <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)}
-            placeholder={pageScope ? 'e.g. Rewrote intro' : 'e.g. Google core update'}
-            onKeyDown={(e) => { if (e.key === 'Enter' && label.trim()) { onAdd(date, label.trim()); setLabel(''); setAdding(false) } }}
-            className="bg-white/5 text-[#e8eaed] text-[11px] rounded px-1.5 py-0.5 border border-white/10 w-44" />
-          <button onClick={() => { if (label.trim()) { onAdd(date, label.trim()); setLabel(''); setAdding(false) } }}
-            className="text-[11px] px-2 py-0.5 rounded bg-[#4e8af4]/15 text-[#4e8af4]">Pin</button>
-          <button onClick={() => setAdding(false)} className="text-[#9aa0a6] hover:text-white"><X className="size-3" /></button>
-        </span>
-      ) : (
-        <button onClick={() => { setDate(defaultDate); setAdding(true) }}
-          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
-          title={pageScope ? `Pin an event on ${pageScope}` : 'Pin a site-wide event'}>
-          <Pin className="size-3" /> {pageScope ? 'Pin event on page' : 'Pin event'}
-        </button>
-      )}
-    </div>
-  )
-}
-
 function Segmented({
   label, options, value, onChange,
 }: {
@@ -486,82 +490,6 @@ function Segmented({
             {o.label}
           </button>
         ))}
-      </div>
-    </div>
-  )
-}
-
-function MarkerDetail({
-  event, siteId, confounders, onClose, onOpenPage,
-}: {
-  event: ChangeEvent; siteId: string; confounders: number
-  onClose: () => void; onOpenPage?: () => void
-}) {
-  const color = TYPE_META[event.type].color
-  const watchHint: Record<ChangeEvent['type'], string> = {
-    meta: 'Watch CTR (a title/description win often lifts CTR without moving position).',
-    technical: 'Watch impressions (canonical/noindex changes eligibility, not CTR).',
-    schema: "Affects rich-result eligibility - you won't see this isolated in clicks or impressions.",
-  }
-  return (
-    <div className="rounded-xl border border-[#4e8af4]/40 bg-[#1a1d27] p-4 max-w-4xl">
-      <div className="flex items-start gap-3">
-        <span className="size-2.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: color }} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] text-[#e8eaed] font-medium">{event.summary}</span>
-            <span className="text-[11px] text-[#9aa0a6]">{event.day}</span>
-            {!event.measurable && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#9aa0a6]">
-                can't measure this one directly
-              </span>
-            )}
-          </div>
-          <a href={event.pageUrl} target="_blank" rel="noopener noreferrer"
-            className="text-[12px] text-[#9aa0a6] hover:text-[#4e8af4] inline-flex items-center gap-1 mt-0.5 truncate max-w-full">
-            {event.pageUrl}<ExternalLink className="size-3 opacity-50" />
-          </a>
-          {(event.before || event.after) && (
-            <div className="mt-2 text-[12px]">
-              {event.before && <div className="text-[#9aa0a6] line-through decoration-[#9aa0a6]/40 truncate">{event.before}</div>}
-              {event.after && <div className="text-[#e8eaed] truncate">{event.after}</div>}
-            </div>
-          )}
-          <div className="mt-2 text-[11px] text-[#9aa0a6]/80">{watchHint[event.type]}</div>
-          {confounders > 0 && (
-            <div className="flex items-start gap-1.5 text-[11px] text-amber-400/90 mt-2">
-              <AlertTriangle className="size-3 mt-0.5 flex-shrink-0" />
-              <span>{confounders} other change{confounders > 1 ? 's' : ''} on this page in the
-                measurement window, so this result can&apos;t be pinned to one change.</span>
-            </div>
-          )}
-          {event.effectId && (
-            <div className="mt-2.5">
-              <EffectQueriesSection
-                siteId={siteId}
-                effectId={event.effectId}
-                measured={event.effectStatus === 'measured'}
-              />
-            </div>
-          )}
-          <div className="mt-3 flex items-center gap-2">
-            {onOpenPage && (
-              <button onClick={onOpenPage}
-                className="text-[11px] px-2.5 py-1 rounded bg-[#4e8af4]/15 text-[#4e8af4] hover:bg-[#4e8af4]/25 transition-colors">
-                Open page view →
-              </button>
-            )}
-            {event.type === 'meta' && (
-              <Link to={`/sites/${siteId}/meta`}
-                className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded bg-white/5 text-[#9aa0a6] hover:text-[#e8eaed] transition-colors">
-                <Wand2 className="size-3" /> Do this again in Meta Manager
-              </Link>
-            )}
-          </div>
-        </div>
-        <button onClick={onClose} className="text-[#9aa0a6] hover:text-[#e8eaed] flex-shrink-0">
-          <X className="size-4" />
-        </button>
       </div>
     </div>
   )

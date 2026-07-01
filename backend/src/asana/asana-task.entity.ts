@@ -64,6 +64,22 @@ export class AsanaTask {
   @Column({ type: 'boolean', default: false })
   completed: boolean;
 
+  /**
+   * When the task was completed (Asana's `completed_at` clock — NOT sync time).
+   * Frozen at completion; drives the Impact task marker's date. Cleared on
+   * re-open so the marker disappears until the task is completed again.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  completedAt: Date | null;
+
+  /**
+   * Impact scope: which pages this task's completion is credited to.
+   * 'sitewide' → global impact timeline only; 'pages' → the linked pages (via
+   * asana_task_page) + global; null → not yet scoped (no impact marker).
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  scope: 'sitewide' | 'pages' | null;
+
   /** Asana `due_on` (a calendar date, no time). */
   @Column({ type: 'date', nullable: true })
   dueOn: string | null;
