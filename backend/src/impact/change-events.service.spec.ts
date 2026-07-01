@@ -9,7 +9,7 @@ describe('ChangeEventsService', () => {
   const at = new Date('2026-05-10T18:00:00Z'); // LA: 2026-05-10
 
   function build(overrides: {
-    pages?: any[]; meta?: any[]; schema?: any[]; effects?: any[]; alt?: any[];
+    pages?: any[]; meta?: any[]; schema?: any[]; effects?: any[]; alt?: any[]; annotations?: any[];
   } = {}) {
     const pages = repo(overrides.pages ?? [
       { id: 'p1', url: 'https://x.com/a' },
@@ -27,7 +27,8 @@ describe('ChangeEventsService', () => {
       { id: 'e1', pageId: 'p1', appliedAt: at, status: 'measured' },
     ]);
     const alt = repo(overrides.alt ?? []);
-    return new ChangeEventsService(meta, pages, schema, effects, alt);
+    const annotations = repo(overrides.annotations ?? []);
+    return new ChangeEventsService(meta, pages, schema, effects, alt, annotations);
   }
 
   it('merges meta, technical and schema sources into a typed feed', async () => {
@@ -114,6 +115,29 @@ describe('ChangeEventsService', () => {
     expect(events[0].pageId).toBeNull();
     expect(events[0].measurable).toBe(false);
     expect(events[0].summary).toContain('2 pages');
+  });
+
+  it('folds manual annotations into the feed as category:manual (sitewide + page scoping)', async () => {
+    const svc = build({
+      pages: [{ id: 'p1', url: 'https://x.com/a' }, { id: 'p2', url: 'https://x.com/b' }],
+      meta: [], schema: [], effects: [], alt: [],
+      annotations: [
+        { id: 'an1', pageId: null, date: '2026-05-10', label: 'March core update', type: 'core-update', link: 'https://g.co/x' },
+        { id: 'an2', pageId: 'p2', date: '2026-05-11', label: 'Rewrote intro', type: null, link: null },
+      ],
+    });
+    // Global view: sitewide only.
+    const global = await svc.listEvents('site1');
+    const gm = global.filter((e) => e.category === 'manual');
+    expect(gm).toHaveLength(1);
+    expect(gm[0].id).toBe('manual:an1');
+    expect(gm[0].subtype).toBe('core-update');
+    expect(gm[0].taskUrl).toBe('https://g.co/x');
+    expect(gm[0].measurable).toBe(false);
+    // Page p2 view: sitewide + this page's pin.
+    const page = await svc.listEvents('site1', 'p2');
+    const pm = page.filter((e) => e.category === 'manual').map((e) => e.id).sort();
+    expect(pm).toEqual(['manual:an1', 'manual:an2']);
   });
 
   it('ALT page view: a per-page marker only when the page is in the frozen page-set', async () => {

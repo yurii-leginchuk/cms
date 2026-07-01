@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { impactApi, type SeriesParams } from '@/api/impact'
+import { impactApi, type SeriesParams, type AnnotationInput } from '@/api/impact'
 
 export function useImpactEvents(siteId: string, pageId?: string) {
   return useQuery({
@@ -83,12 +83,26 @@ export function useImpactAnnotations(siteId: string) {
   })
 }
 
+/** Annotations fold into the change-events feed, so decisions also refresh events. */
+function invalidateAnnotations(qc: ReturnType<typeof useQueryClient>, siteId: string) {
+  qc.invalidateQueries({ queryKey: ['impact-annotations', siteId] })
+  qc.invalidateQueries({ queryKey: ['impact-events', siteId] })
+}
+
 export function useCreateAnnotation(siteId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ date, label, pageId }: { date: string; label: string; pageId?: string | null }) =>
-      impactApi.createAnnotation(siteId, date, label, pageId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['impact-annotations', siteId] }),
+    mutationFn: (input: AnnotationInput) => impactApi.createAnnotation(siteId, input),
+    onSuccess: () => invalidateAnnotations(qc, siteId),
+  })
+}
+
+export function useUpdateAnnotation(siteId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { id: string; patch: Partial<AnnotationInput> }) =>
+      impactApi.updateAnnotation(siteId, vars.id, vars.patch),
+    onSuccess: () => invalidateAnnotations(qc, siteId),
   })
 }
 
@@ -96,6 +110,6 @@ export function useDeleteAnnotation(siteId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => impactApi.deleteAnnotation(siteId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['impact-annotations', siteId] }),
+    onSuccess: () => invalidateAnnotations(qc, siteId),
   })
 }

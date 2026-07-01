@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Navigate, Link, useSearchParams } from 'react-router-dom'
 import {
-  TrendingUp, ArrowLeft, X, Download, Pin, Search,
+  TrendingUp, ArrowLeft, Download, Pin, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
@@ -12,7 +12,7 @@ import { usePage } from '@/hooks/usePages'
 import { useGscSiteStatus } from '@/hooks/useGsc'
 import { useOptimizationEffects } from '@/hooks/useOptimizationEffects'
 import {
-  useImpactEvents, useImpactSeries, useImpactAnnotations, useCreateAnnotation, useDeleteAnnotation,
+  useImpactEvents, useImpactSeries, useImpactAnnotations, useDeleteAnnotation,
 } from '@/hooks/useImpact'
 import { EffectCard } from '@/components/impact/EffectCard'
 import { ChangesTable } from '@/components/impact/ChangesTable'
@@ -20,6 +20,7 @@ import {
   ImpactTimeline, METRIC_SEL_LABELS, type ImpactMetricSel,
 } from '@/components/impact/ImpactTimeline'
 import { ClusterSheet } from '@/components/impact/ClusterSheet'
+import { AddEventDialog, type EditingAnnotation } from '@/components/impact/AddEventDialog'
 import { CATEGORY_META, CATEGORY_ORDER, clusterEvents } from '@/components/impact/cluster'
 import { ImpactQueriesPanel } from '@/components/impact/ImpactQueriesPanel'
 import type { ChangeEvent, ChangeEventCategory } from '@/api/impact'
@@ -93,6 +94,8 @@ export default function ImpactPage() {
     return ALL_CATEGORIES
   })
   const [selectedCluster, setSelectedCluster] = useState<ChangeEvent[] | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [editingAnnotation, setEditingAnnotation] = useState<EditingAnnotation | null>(null)
   const [hoveredDay, setHoveredDay] = useState<string | null>(null)
   const [smooth, setSmooth] = useState(false)
   const [view, setView] = useState<'cards' | 'table'>('cards')
@@ -110,7 +113,6 @@ export default function ImpactPage() {
   const { data: events = [] } = useImpactEvents(siteId ?? '', pageId)
   const { data: effects = [] } = useOptimizationEffects(siteId ?? '', pageId)
   const { data: annotations = [] } = useImpactAnnotations(siteId ?? '')
-  const createAnnotation = useCreateAnnotation(siteId ?? '')
   const deleteAnnotation = useDeleteAnnotation(siteId ?? '')
 
   // Comparison overlay (previous period / YoY), single-metric mode only.
@@ -139,17 +141,25 @@ export default function ImpactPage() {
   useEffect(() => {
     try { localStorage.setItem(`impact-cats-${siteId}`, JSON.stringify(enabled)) } catch { /* ignore */ }
   }, [enabled, siteId])
-  // Site-wide pins (pageId null) show on every timeline; page pins only on their
-  // own page. So the global view stays uncluttered and the page view gets both.
-  const visibleAnnotations = useMemo(
-    () => annotations.filter((a) =>
-      a.pageId == null || (scope === 'page' && a.pageId === selectedPage?.id)),
-    [annotations, scope, selectedPage],
-  )
   const selectedIds = useMemo(
     () => new Set((selectedCluster ?? []).map((e) => e.id)),
     [selectedCluster],
   )
+
+  // Manual events carry id `manual:<annotationId>`; edit/delete via that id.
+  function editManual(annotationId: string) {
+    const a = annotations.find((x) => x.id === annotationId)
+    if (!a) return
+    setEditingAnnotation({ id: a.id, date: a.date, label: a.label, type: a.type ?? null, link: a.link ?? null, pageId: a.pageId })
+    setAddOpen(true)
+  }
+  function deleteManual(annotationId: string) {
+    deleteAnnotation.mutate(annotationId)
+    setSelectedCluster((cur) => {
+      const next = (cur ?? []).filter((e) => e.id !== `manual:${annotationId}`)
+      return next.length ? next : null
+    })
+  }
 
   // Keyboard nav: ←/→ step between clusters (chronological), Esc closes the Sheet.
   useEffect(() => {
@@ -304,7 +314,6 @@ export default function ImpactPage() {
                 onHoverDay={setHoveredDay}
                 hoveredDay={hoveredDay}
                 smooth={smooth}
-                annotations={visibleAnnotations}
                 comparePoints={compare !== 'none' ? compareSeries.data?.points : undefined}
               />
             )}
@@ -337,15 +346,16 @@ export default function ImpactPage() {
                 </div>
               )
             })()}
-            <AnnotationsBar
-              annotations={visibleAnnotations}
-              defaultDate={to}
-              pageScope={scope === 'page' ? selectedPage?.url : undefined}
-              onAdd={(date, label) => createAnnotation.mutate({
-                date, label, pageId: scope === 'page' ? selectedPage?.id : undefined,
-              })}
-              onRemove={(id) => deleteAnnotation.mutate(id)}
-            />
+            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/5">
+              <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/60 mr-1">External events</span>
+              <button
+                onClick={() => { setEditingAnnotation(null); setAddOpen(true) }}
+                className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+                title="Mark a core update, migration, PR, etc. — shows as a Manual marker on the timeline">
+                <Pin className="size-3" /> Add event
+              </button>
+              <span className="text-[10px] text-[#9aa0a6]/50">core updates, migrations, PR — toggle via “Manual”</span>
+            </div>
           </div>
 
           {/* ── Per-page query drill-down ─────────────────────────────── */}
@@ -370,6 +380,17 @@ export default function ImpactPage() {
               setScope('page')
               setSelectedCluster(null)
             }}
+            onEditManual={editManual}
+            onDeleteManual={deleteManual}
+          />
+
+          <AddEventDialog
+            open={addOpen}
+            onOpenChange={(o) => { setAddOpen(o); if (!o) setEditingAnnotation(null) }}
+            siteId={siteId}
+            editing={editingAnnotation}
+            page={scope === 'page' && selectedPage ? selectedPage : null}
+            defaultDate={to}
           />
 
           {/* ── Changes (cards | table) ───────────────────────────────── */}
@@ -448,54 +469,6 @@ function ScopeToggle({
         className="px-3 py-1 rounded-md text-[#9aa0a6] hover:text-[#e8eaed] transition-colors">
         Per-page →
       </Link>
-    </div>
-  )
-}
-
-function AnnotationsBar({
-  annotations, defaultDate, pageScope, onAdd, onRemove,
-}: {
-  annotations: { id: string; date: string; label: string; pageId: string | null }[]
-  defaultDate: string
-  /** When set, the page URL the new pin will be scoped to (per-page view). */
-  pageScope?: string
-  onAdd: (date: string, label: string) => void
-  onRemove: (id: string) => void
-}) {
-  const [adding, setAdding] = useState(false)
-  const [date, setDate] = useState(defaultDate)
-  const [label, setLabel] = useState('')
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-white/5">
-      <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6]/60 mr-1">Events</span>
-      {annotations.map((a) => (
-        <span key={a.id}
-          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-[#fbbf24]/10 text-[#fbbf24]"
-          title={a.pageId ? 'Pinned to this page' : 'Site-wide event'}>
-          {a.pageId && <Pin className="size-2.5 fill-current" />}
-          {a.label} <span className="text-[#fbbf24]/50">{a.date}</span>
-          <button onClick={() => onRemove(a.id)} className="hover:text-white"><X className="size-2.5" /></button>
-        </span>
-      ))}
-      {adding ? (
-        <span className="inline-flex items-center gap-1">
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="bg-white/5 text-[#e8eaed] text-[11px] rounded px-1.5 py-0.5 border border-white/10" />
-          <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)}
-            placeholder={pageScope ? 'e.g. Rewrote intro' : 'e.g. Google core update'}
-            onKeyDown={(e) => { if (e.key === 'Enter' && label.trim()) { onAdd(date, label.trim()); setLabel(''); setAdding(false) } }}
-            className="bg-white/5 text-[#e8eaed] text-[11px] rounded px-1.5 py-0.5 border border-white/10 w-44" />
-          <button onClick={() => { if (label.trim()) { onAdd(date, label.trim()); setLabel(''); setAdding(false) } }}
-            className="text-[11px] px-2 py-0.5 rounded bg-[#4e8af4]/15 text-[#4e8af4]">Pin</button>
-          <button onClick={() => setAdding(false)} className="text-[#9aa0a6] hover:text-white"><X className="size-3" /></button>
-        </span>
-      ) : (
-        <button onClick={() => { setDate(defaultDate); setAdding(true) }}
-          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
-          title={pageScope ? `Pin an event on ${pageScope}` : 'Pin a site-wide event'}>
-          <Pin className="size-3" /> {pageScope ? 'Pin event on page' : 'Pin event'}
-        </button>
-      )}
     </div>
   )
 }

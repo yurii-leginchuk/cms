@@ -6,6 +6,7 @@ import { Page } from '../pages/page.entity';
 import { SchemaHistory } from '../schema/schema-history.entity';
 import { OptimizationEffect } from '../optimization-effects/optimization-effect.entity';
 import { AltPublishEvent } from './alt-publish-event.entity';
+import { ImpactAnnotation } from './impact-annotation.entity';
 import { ChangeEvent, ChangeEventCategory } from './change-event';
 import { toGscDay, diffDays } from './gsc-date';
 import { CONFOUND_WINDOW_DAYS, GROUP_WINDOW_DAYS } from './impact.constants';
@@ -41,6 +42,7 @@ export class ChangeEventsService {
     @InjectRepository(SchemaHistory) private readonly schemaRepo: Repository<SchemaHistory>,
     @InjectRepository(OptimizationEffect) private readonly effectRepo: Repository<OptimizationEffect>,
     @InjectRepository(AltPublishEvent) private readonly altRepo: Repository<AltPublishEvent>,
+    @InjectRepository(ImpactAnnotation) private readonly annotationRepo: Repository<ImpactAnnotation>,
   ) {}
 
   /**
@@ -61,7 +63,7 @@ export class ChangeEventsService {
     const pageIds = pages.map((p) => p.id);
     if (pageIds.length === 0 && !pageId) return [];
 
-    const [metaRows, schemaRows, effects, altRows] = await Promise.all([
+    const [metaRows, schemaRows, effects, altRows, annotationRows] = await Promise.all([
       pageIds.length
         ? this.metaRepo.find({ where: { pageId: In(pageIds) }, order: { createdAt: 'DESC' }, take: 1000 })
         : Promise.resolve([]),
@@ -72,6 +74,7 @@ export class ChangeEventsService {
       }),
       this.effectRepo.find({ where: pageId ? { siteId, pageId } : { siteId }, take: 1000 }),
       this.altRepo.find({ where: { siteId }, order: { publishedAt: 'DESC' }, take: 500 }),
+      this.annotationRepo.find({ where: { siteId }, order: { date: 'DESC' }, take: 500 }),
     ]);
 
     const events: ChangeEvent[] = [];
@@ -251,6 +254,33 @@ export class ChangeEventsService {
           confoundedWith: 0,
         });
       }
+    }
+
+    // ── Manual annotations (external events) folded into the same feed ────────
+    // Sitewide pins (pageId null) show everywhere; page pins only on their page —
+    // so they toggle, cluster and open in the dialog uniformly with real changes.
+    for (const a of annotationRows) {
+      if (pageId ? a.pageId !== null && a.pageId !== pageId : a.pageId !== null) continue;
+      events.push({
+        id: `manual:${a.id}`,
+        type: 'manual',
+        category: 'manual',
+        clusterId: '',
+        subtype: a.type ?? 'event',
+        pageId: a.pageId,
+        pageUrl: a.pageId ? (urlById.get(a.pageId) ?? '') : '',
+        ts: `${a.date}T12:00:00.000Z`,
+        day: a.date,
+        precision: 'day',
+        summary: a.label,
+        before: null,
+        after: null,
+        measurable: false,
+        effectStatus: null,
+        effectId: null,
+        confoundedWith: 0,
+        taskUrl: a.link ?? null,
+      });
     }
 
     this.markConfounders(events);

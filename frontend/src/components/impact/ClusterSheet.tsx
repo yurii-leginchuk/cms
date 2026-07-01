@@ -1,4 +1,4 @@
-import { ExternalLink, AlertTriangle, Layers } from 'lucide-react'
+import { ExternalLink, AlertTriangle, Layers, Pencil, Trash2 } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet'
@@ -21,31 +21,39 @@ function pagePath(url: string): string {
  * (grouping CREATES confounding), the confounder verdict, and the per-query
  * drill-down for measured meta changes. NEVER a rolled-up "+X clicks" total.
  */
+interface ManualActions {
+  onEditManual?: (annotationId: string) => void
+  onDeleteManual?: (annotationId: string) => void
+}
+
 export function ClusterSheet({
-  cluster, siteId, onClose, onOpenPage,
+  cluster, siteId, onClose, onOpenPage, onEditManual, onDeleteManual,
 }: {
   cluster: ChangeEvent[] | null
   siteId: string
   onClose: () => void
   onOpenPage?: (pageId: string, pageUrl: string) => void
-}) {
+} & ManualActions) {
   const open = !!cluster && cluster.length > 0
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <SheetContent side="right" className="sm:max-w-xl w-full overflow-y-auto">
-        {open && cluster && <ClusterBody events={cluster} siteId={siteId} onOpenPage={onOpenPage} />}
+        {open && cluster && (
+          <ClusterBody events={cluster} siteId={siteId} onOpenPage={onOpenPage}
+            onEditManual={onEditManual} onDeleteManual={onDeleteManual} />
+        )}
       </SheetContent>
     </Sheet>
   )
 }
 
 function ClusterBody({
-  events, siteId, onOpenPage,
+  events, siteId, onOpenPage, onEditManual, onDeleteManual,
 }: {
   events: ChangeEvent[]
   siteId: string
   onOpenPage?: (pageId: string, pageUrl: string) => void
-}) {
+} & ManualActions) {
   const mix = categoryMix(events)
   const pages = clusterPageCount(events)
   const days = events.map((e) => e.day).sort()
@@ -112,6 +120,8 @@ function ClusterBody({
                 rows={rows}
                 siteId={siteId}
                 onOpenPage={onOpenPage}
+                onEditManual={onEditManual}
+                onDeleteManual={onDeleteManual}
               />
             ))}
           </div>
@@ -121,13 +131,13 @@ function ClusterBody({
 }
 
 function CategoryGroup({
-  cat, rows, siteId, onOpenPage,
+  cat, rows, siteId, onOpenPage, onEditManual, onDeleteManual,
 }: {
   cat: ChangeEventCategory
   rows: ChangeEvent[]
   siteId: string
   onOpenPage?: (pageId: string, pageUrl: string) => void
-}) {
+} & ManualActions) {
   const meta = CATEGORY_META[cat]
   return (
     <div className="rounded-xl border border-white/8 bg-[#14161f] overflow-hidden">
@@ -161,6 +171,20 @@ function CategoryGroup({
                 )}
                 {!e.pageId && e.scope === 'sitewide' && (
                   <span className="text-[11px] text-[#9aa0a6]">sitewide</span>
+                )}
+                {cat === 'manual' && (onEditManual || onDeleteManual) && (
+                  <>
+                    {onEditManual && (
+                      <button onClick={() => onEditManual(e.id.replace(/^manual:/, ''))} title="Edit event" className="text-[#9aa0a6] hover:text-[#e8eaed]">
+                        <Pencil className="size-3.5" />
+                      </button>
+                    )}
+                    {onDeleteManual && (
+                      <button onClick={() => onDeleteManual(e.id.replace(/^manual:/, ''))} title="Delete event" className="text-[#9aa0a6] hover:text-red-300">
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

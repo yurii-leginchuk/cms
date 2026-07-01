@@ -81,7 +81,17 @@ export interface ImpactAnnotation {
   pageId: string | null
   date: string
   label: string
+  type?: string | null
+  link?: string | null
   createdAt: string
+}
+
+export interface AnnotationInput {
+  date: string
+  label: string
+  pageId?: string | null
+  type?: string | null
+  link?: string | null
 }
 
 export interface PageQueryCell {
@@ -246,11 +256,18 @@ export const impactApi = {
     return data.data
   },
 
-  createAnnotation: async (
-    siteId: string, date: string, label: string, pageId?: string | null,
-  ): Promise<ImpactAnnotation> => {
+  createAnnotation: async (siteId: string, input: AnnotationInput): Promise<ImpactAnnotation> => {
     const { data } = await apiClient.post<{ data: ImpactAnnotation }>(
-      `/api/sites/${siteId}/impact/annotations`, { date, label, pageId: pageId ?? null },
+      `/api/sites/${siteId}/impact/annotations`, input,
+    )
+    return data.data
+  },
+
+  updateAnnotation: async (
+    siteId: string, id: string, patch: Partial<AnnotationInput>,
+  ): Promise<ImpactAnnotation> => {
+    const { data } = await apiClient.patch<{ data: ImpactAnnotation }>(
+      `/api/sites/${siteId}/impact/annotations/${id}`, patch,
     )
     return data.data
   },
