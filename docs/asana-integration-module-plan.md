@@ -505,7 +505,24 @@ section→update→subtask→link→complete→untrack all confirmed, UI screens
 NOTE: writes here are the DIRECT UI path; MCP writes stay GATED (Phase 3). Optimistic
 mirror + rollback was deferred (writes re-fetch via React Query invalidation instead).
 
-### Phase 3 — Webhooks + MCP
+### Phase 3 — Webhooks + MCP — ✅ BUILT (2026-07-01, branch `feat/asana-integration`)
+**3a Webhooks** (commit f6efcac): `@Public()` raw-body controller
+`/webhooks/asana/:siteId`; X-Hook-Secret handshake (stored encrypted, echoed);
+HMAC-SHA256 `verifyHookSignature` + `extractTaskEvents` (pure, unit-tested);
+events reconcile ONLY tracked tasks (hydrate/prune); establish/remove endpoints +
+`createWebhook`/`deleteWebhook`; establish refuses a non-public `CMS_PUBLIC_URL`.
+FE: per-site live-sync chip + Enable/Disable in settings; monitor sync-trust chip
+reflects real webhook health. Full delivery needs a public URL (can't live-test on
+localhost). **3b Gated MCP** (commit f6c1915): `mcp-changes` extended with module
+`asana` + actions (create/update/status/assignee/subtask/link) + `targetType 'task'`;
+`accept()` dispatches to `AsanaTaskService` (write goes live to Asana on approval).
+MCP tools (`mcp-server/src/tools/asana.ts`): reads + `asana_track` direct; all
+Asana-mutating tools stage a PENDING proposal. FE approval queue renders Asana
+proposals (tab + AsanaDiff). **Verified live: propose→pending(counts asana:1)→
+accept→task created in Asana; reject never creates.** 389 backend tests green;
+MCP + both builds green.
+
+<!-- original Phase 3 plan retained below -->
 - Webhook controller (`@Public()`, raw-body), handshake echo, **HMAC verify**
   (`verifyHookSignature` + spec), event → hydrate, freshness stamps; establish/delete
   endpoints + Settings webhook health UI; **MCP tools** (`asana.ts`) + smoke;
