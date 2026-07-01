@@ -65,9 +65,12 @@ function SyncStatusCell({ status, appliedAt, error }: {
       <span>
         Synced
         {appliedAt && (
-          <span className="text-[11px] text-[#9aa0a6] ml-1">
-            {formatDistanceToNow(new Date(appliedAt), { addSuffix: true })}
-          </span>
+          <>
+            {' '}
+            <span className="text-[11px] text-[#9aa0a6]">
+              {formatDistanceToNow(new Date(appliedAt), { addSuffix: true })}
+            </span>
+          </>
         )}
       </span>
     </span>
