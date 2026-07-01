@@ -45,6 +45,11 @@ export interface SeriesPoint {
   impressions: number
   position: number
   provisional: boolean
+  /** Merged-in GA4 organic metrics (present only when GA4 is connected). */
+  sessions?: number
+  conversions?: number
+  revenue?: number
+  users?: number
 }
 
 export interface ImpactSeries {
