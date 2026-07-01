@@ -17,10 +17,18 @@ It mirrors the conventions of the existing **Image Optimization** module
 
 ## 1. Goal & Scope
 
+> **SCOPE DECISION (2026-07-01, user):** The CMS tracks **only the tasks it
+> created** (origin `cms`/`mcp`) — NOT the whole Asana project. There is no bulk
+> import/monitor of a project's existing tasks. The local mirror holds only
+> CMS-owned tasks; "Sync now" re-hydrates those rows (per-task), and the
+> monitoring page shows only them. Consequently the monitoring view is empty
+> until the CMS starts creating tasks (Phase 2). The site→project mapping still
+> matters: it's the project the CMS creates its tasks **into**.
+
 ### Goal
 Let the team create and manage Asana tasks from inside the CMS (and from Claude
-Code via MCP), and monitor the live status of a site's tasks — with each Asana
-**project mapped to a CMS site** and tasks optionally **linked to a CMS entity**
+Code via MCP), and monitor the status of **the tasks the CMS created** — with each
+Asana **project mapped to a CMS site** and tasks optionally **linked to a CMS entity**
 (a page, a meta change, or a schema change) so an SEO fix becomes a tracked task.
 
 ### In scope

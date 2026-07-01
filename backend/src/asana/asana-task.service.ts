@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { AsanaTask } from './asana-task.entity';
 import { AsanaConnectionService } from './asana-connection.service';
 import { AsanaProjectService } from './asana-project.service';
-import { AsanaSyncService } from './asana-sync.service';
 import { AsanaApiClient } from './asana-api-client';
+import { mapTaskToMirror } from './asana-helpers';
 
 export interface ListTasksParams {
   page?: number;
@@ -29,9 +29,11 @@ export interface TaskDetail {
 }
 
 /**
- * Reads the mirror for the Task Monitoring page (fast, filterable). Phase 1 is
- * read-only; the detail view hydrates a single task live from Asana so an opened
- * task is always fresh, then upserts the mirror.
+ * Reads the mirror for the Task Monitoring page (fast, filterable). The mirror
+ * holds ONLY tasks the CMS created (origin `cms`/`mcp`) — not the whole Asana
+ * project. Phase 1 is read-only; the detail view re-hydrates the tracked task
+ * live and fetches its subtasks live (subtasks are NOT persisted, so the mirror
+ * stays limited to CMS-owned top-level tasks).
  */
 @Injectable()
 export class AsanaTaskService {
@@ -40,7 +42,6 @@ export class AsanaTaskService {
     private readonly taskRepo: Repository<AsanaTask>,
     private readonly connection: AsanaConnectionService,
     private readonly projects: AsanaProjectService,
-    private readonly sync: AsanaSyncService,
     private readonly api: AsanaApiClient,
   ) {}
 
@@ -86,23 +87,33 @@ export class AsanaTaskService {
   }
 
   /**
-   * Task detail: hydrate the task + its subtasks LIVE from Asana (so an opened
-   * task is fresh), upsert them into the mirror, and return the mirror rows.
+   * Task detail: re-hydrate the (CMS-tracked) task LIVE from Asana so it's fresh,
+   * and fetch its subtasks LIVE. If the task is tracked, its mirror row is
+   * updated; subtasks are returned as transient (non-persisted) views so the
+   * mirror stays limited to CMS-owned top-level tasks.
    */
   async getDetail(siteId: string, taskGid: string): Promise<TaskDetail> {
     const map = await this.projects.requireProject(siteId);
     const token = await this.connection.getToken();
 
     const raw = await this.api.getTask(token, taskGid);
-    const task = await this.sync.upsertTask(raw, siteId, map.projectGid!);
+    const fields = mapTaskToMirror(raw, siteId, map.projectGid!);
 
-    const subtaskRaws = await this.api.listSubtasks(token, taskGid);
-    const subtasks: AsanaTask[] = [];
-    for (const st of subtaskRaws) {
-      subtasks.push(await this.sync.upsertTask(st, siteId, map.projectGid!));
+    const existing = await this.taskRepo.findOne({ where: { siteId, taskGid } });
+    let task: AsanaTask;
+    if (existing) {
+      Object.assign(existing, fields, { lastSyncedAt: new Date() });
+      task = await this.taskRepo.save(existing);
+    } else {
+      // Not a CMS-tracked task — a transient read-only view (never persisted).
+      task = this.taskRepo.create({ ...fields, origin: 'asana', lastSyncedAt: new Date() });
     }
 
-    if (!task) throw new NotFoundException('Task not found');
+    const subtaskRaws = await this.api.listSubtasks(token, taskGid);
+    const subtasks = subtaskRaws.map((st) =>
+      this.taskRepo.create({ ...mapTaskToMirror(st, siteId, map.projectGid!), origin: 'asana' }),
+    );
+
     return { task, subtasks };
   }
 }

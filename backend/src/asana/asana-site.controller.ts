@@ -42,11 +42,11 @@ export class AsanaSiteController {
     return this.projects.listSections(siteId);
   }
 
-  /** Full read-through reconcile ("Sync now"). */
+  /** Refresh the CMS-tracked tasks for this site ("Sync now"). */
   @Post('sync')
   @HttpCode(HttpStatus.OK)
   syncNow(@Param('siteId') siteId: string) {
-    return this.sync.fullSync(siteId);
+    return this.sync.refreshTrackedTasks(siteId);
   }
 
   /** Paginated, filtered mirror list. */

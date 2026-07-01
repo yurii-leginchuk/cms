@@ -248,9 +248,7 @@ export default function SiteTasksPage() {
                           <p className="text-[#9aa0a6] text-sm text-center max-w-sm">
                             {debouncedSearch || section || completed || aiOnly
                               ? 'No tasks match these filters.'
-                              : mapping?.lastFullSyncAt
-                                ? 'No tasks in this project yet. Create one in Asana, then Refresh.'
-                                : 'Nothing synced yet — hit Refresh to pull this project’s tasks from Asana.'}
+                              : 'No CMS tasks yet. Tasks you create from the CMS appear here — this page tracks only the tasks the CMS created, not the whole Asana project.'}
                           </p>
                         </div>
                       </TableCell>
