@@ -10,6 +10,10 @@ export class UpdateOptimizationConfigDto {
   webpEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  autopilotEnabled?: boolean;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(100)

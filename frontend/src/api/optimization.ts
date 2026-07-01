@@ -34,6 +34,10 @@ export interface OptimizationConfig {
   dnsStatus: DnsStatus
   dnsError: string | null
   rewriteEnabled: boolean
+  autopilotEnabled: boolean
+  webhookEnabled: boolean
+  webhookConfigured: boolean
+  webhookLastReceivedAt: string | null
 }
 
 export interface UpdateOptimizationConfig {
@@ -41,6 +45,7 @@ export interface UpdateOptimizationConfig {
   webpEnabled?: boolean
   quality?: number
   maxWidth?: number | null
+  autopilotEnabled?: boolean
 }
 
 /** Write-only R2 credentials (only send fields the user actually changed). */
@@ -178,6 +183,30 @@ export async function enableRewrite(
 
 export async function disableRewrite(siteId: string): Promise<OptimizationConfig> {
   const { data } = await apiClient.post(`${base(siteId)}/config/rewrite/disable`)
+  return data.data
+}
+
+export async function connectWebhook(siteId: string): Promise<OptimizationConfig> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/webhook/connect`)
+  return data.data
+}
+
+export async function disconnectWebhook(siteId: string): Promise<OptimizationConfig> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/webhook/disconnect`)
+  return data.data
+}
+
+export interface AutopilotResult {
+  siteId: string
+  skipped?: string
+  optimized?: number
+  skippedImages?: number
+  failed?: number
+  published?: number
+}
+
+export async function runAutopilot(siteId: string): Promise<AutopilotResult> {
+  const { data } = await apiClient.post(`${base(siteId)}/autopilot`)
   return data.data
 }
 

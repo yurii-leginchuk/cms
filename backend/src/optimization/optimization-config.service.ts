@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { Site } from '../sites/site.entity';
 import { CryptoService } from '../common/crypto/crypto.service';
 import {
@@ -38,6 +39,11 @@ export interface OptimizationConfigPublic {
   dnsStatus: DnsStatus;
   dnsError: string | null;
   rewriteEnabled: boolean;
+  // Automation (Phase 4)
+  autopilotEnabled: boolean;
+  webhookEnabled: boolean;
+  webhookConfigured: boolean;
+  webhookLastReceivedAt: Date | null;
 }
 
 @Injectable()
@@ -82,7 +88,32 @@ export class OptimizationConfigService {
       dnsStatus: c.dnsStatus,
       dnsError: c.dnsError,
       rewriteEnabled: c.rewriteEnabled,
+      autopilotEnabled: c.autopilotEnabled,
+      webhookEnabled: c.webhookEnabled,
+      webhookConfigured: !!c.webhookSecretEnc,
+      webhookLastReceivedAt: c.webhookLastReceivedAt,
     };
+  }
+
+  /** Ensure a webhook secret exists; returns the PLAINTEXT (for pushing to the plugin). */
+  async ensureWebhookSecret(config: SiteOptimizationConfig): Promise<string> {
+    if (config.webhookSecretEnc) {
+      return this.crypto.decrypt(config.webhookSecretEnc);
+    }
+    const secret = randomBytes(32).toString('hex');
+    config.webhookSecretEnc = this.crypto.encrypt(secret);
+    await this.configRepo.save(config);
+    return secret;
+  }
+
+  /** Decrypt the webhook secret (server-side only, for constant-time compare). */
+  getWebhookSecret(config: SiteOptimizationConfig): string | null {
+    return config.webhookSecretEnc ? this.crypto.decrypt(config.webhookSecretEnc) : null;
+  }
+
+  /** Record that a webhook arrived (freshness/"last received"). */
+  async markWebhookReceived(siteId: string): Promise<void> {
+    await this.configRepo.update({ siteId }, { webhookLastReceivedAt: new Date() });
   }
 
   async getPublic(siteId: string): Promise<OptimizationConfigPublic> {
@@ -98,6 +129,7 @@ export class OptimizationConfigService {
     if (dto.webpEnabled !== undefined) config.webpEnabled = dto.webpEnabled;
     if (dto.quality !== undefined) config.quality = dto.quality;
     if (dto.maxWidth !== undefined) config.maxWidth = dto.maxWidth;
+    if (dto.autopilotEnabled !== undefined) config.autopilotEnabled = dto.autopilotEnabled;
     return this.toPublic(await this.configRepo.save(config));
   }
 

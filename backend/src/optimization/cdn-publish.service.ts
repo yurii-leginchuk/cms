@@ -144,6 +144,54 @@ export class CdnPublishService {
     }
   }
 
+  /**
+   * Publish a SINGLE verified mapping (used by the new-upload webhook path so a
+   * burst of uploads doesn't re-HEAD the whole library). HEAD-checks the CDN URL,
+   * marks rewriteLive, and pushes just that one mapping.
+   */
+  async publishOne(
+    config: SiteOptimizationConfig,
+    site: Site,
+    row: ImageOptimization,
+    wpAttachmentId: number,
+  ): Promise<boolean> {
+    if (!config.cdnDomain || !row.r2Key || !row.r2Uploaded) return false;
+    const cdnUrl = buildCdnUrl(config.cdnDomain, row.r2Key);
+    const ok = await this.headOk(cdnUrl);
+    if (!ok) {
+      row.rewriteLive = false;
+      await this.optRepo.save(row);
+      return false;
+    }
+    row.rewriteLive = true;
+    row.rewriteVerifiedAt = new Date();
+    await this.optRepo.save(row);
+    await this.pushMap(site, [{ wpAttachmentId, cdnUrl }]);
+    return true;
+  }
+
+  /** Push the plugin→CMS webhook config (callback URL + secret + enabled flag). */
+  async pushWebhookConfig(
+    site: Site,
+    body: { callbackUrl: string; secret: string; enabled: boolean },
+  ): Promise<void> {
+    if (!site.wpApiKey) throw new BadRequestException('No WP API key configured.');
+    try {
+      await axios.post(`${site.url}/wp-json/poirier-cms/v1/webhook-config`, body, {
+        timeout: 15_000,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Poirier-API-Key': site.wpApiKey,
+        },
+      });
+    } catch (err) {
+      const msg = axios.isAxiosError(err)
+        ? `HTTP ${err.response?.status ?? 'no response'}`
+        : (err as Error).message;
+      throw new ServiceUnavailableException(`Webhook config push failed: ${msg}`);
+    }
+  }
+
   /** Flip the plugin kill-switch (deletes nothing). */
   async setPluginToggle(site: Site, enabled: boolean): Promise<void> {
     if (!site.wpApiKey) throw new BadRequestException('No WP API key configured.');

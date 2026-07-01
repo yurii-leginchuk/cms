@@ -3,7 +3,7 @@
  * Plugin Name:  Poirier CMS Connector
  * Plugin URI:   https://poirier.agency
  * Description:  Receives meta, JSON-LD schema, image ALT, and CDN image-optimization updates from Poirier CMS and applies them via Yoast SEO / the media library.
- * Version:      1.5.0
+ * Version:      1.6.0
  * Author:       Poirier Agency
  * License:      GPL-2.0-or-later
  * Requires PHP: 7.4
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'POIRIER_CMS_VERSION',    '1.5.0' );
+define( 'POIRIER_CMS_VERSION',    '1.6.0' );
 define( 'POIRIER_CMS_OPTION_KEY', 'poirier_cms_api_key' );
 define( 'POIRIER_CMS_LOG_OPTION', 'poirier_cms_request_log' );
 define( 'POIRIER_CMS_LOG_LIMIT',  50 );

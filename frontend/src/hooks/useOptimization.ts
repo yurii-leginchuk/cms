@@ -145,6 +145,30 @@ export function useDisableRewrite(siteId: string) {
   })
 }
 
+export function useConnectWebhook(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.connectWebhook(siteId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDisconnectWebhook(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.disconnectWebhook(siteId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRunAutopilot(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.runAutopilot(siteId),
+    onSuccess: invalidate,
+  })
+}
+
 export function useStartOptimizationRun(siteId: string) {
   const invalidate = useInvalidateOptimization(siteId)
   return useMutation({

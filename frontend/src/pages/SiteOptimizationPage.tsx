@@ -22,6 +22,7 @@ import {
   useCancelOptimizationRun, useReoptimizeImage,
   useUpdateR2Config, useCreateR2Bucket, useTestR2Connection,
   useProvisionCdn, useCdnStatus, useEnableRewrite, useDisableRewrite,
+  useConnectWebhook, useDisconnectWebhook, useRunAutopilot, useOptimizationRuns,
 } from '@/hooks/useOptimization'
 import type { OptimizationScope, OptimizationState, R2Status, DnsStatus } from '@/api/optimization'
 
@@ -188,6 +189,10 @@ export default function SiteOptimizationPage() {
   const provisionCdn = useProvisionCdn(siteId!)
   const enableRewrite = useEnableRewrite(siteId!)
   const disableRewrite = useDisableRewrite(siteId!)
+  const connectWebhook = useConnectWebhook(siteId!)
+  const disconnectWebhook = useDisconnectWebhook(siteId!)
+  const runAutopilot = useRunAutopilot(siteId!)
+  const { data: runs } = useOptimizationRuns(siteId!)
 
   // ── R2 credential form (write-only; blank = keep existing) ─────────────────
   const [r2Form, setR2Form] = useState({ r2AccountId: '', r2AccessKeyId: '', r2Secret: '', cfApiToken: '' })
@@ -336,6 +341,28 @@ export default function SiteOptimizationPage() {
       onError: (e) => toast.error((e as Error).message),
     })
   }
+
+  const doConnectWebhook = () =>
+    connectWebhook.mutate(undefined, {
+      onSuccess: () => toast.success('Auto-optimize on upload connected — new images optimize instantly.'),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  const doDisconnectWebhook = () =>
+    disconnectWebhook.mutate(undefined, {
+      onSuccess: () => toast.success('Auto-optimize on upload disconnected.'),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  const toggleAutopilot = () =>
+    updateConfig.mutate({ autopilotEnabled: !config?.autopilotEnabled }, {
+      onSuccess: () => toast.success('Automation saved'),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  const doRunAutopilot = () =>
+    runAutopilot.mutate(undefined, {
+      onSuccess: (r) =>
+        toast.success(r.skipped ? `Autopilot skipped: ${r.skipped}` : `Autopilot: +${r.optimized ?? 0} optimized, ${r.skippedImages ?? 0} skipped`),
+      onError: (e) => toast.error((e as Error).message),
+    })
 
   const progressPct = run && run.imagesConsidered > 0
     ? Math.round((run.processed / run.imagesConsidered) * 100)
@@ -576,6 +603,80 @@ export default function SiteOptimizationPage() {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Automation */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="size-4" style={{ color: ACCENT }} />
+          <h2 className="text-[13px] font-medium text-[#e8eaed]">Automation</h2>
+        </div>
+
+        {/* Auto-optimize new uploads (webhook) */}
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <Label className="text-[#e8eaed]">Auto-optimize new uploads</Label>
+            <p className="text-[11px] text-[#9aa0a6]">
+              {config?.webhookConfigured && config?.webhookEnabled
+                ? `Connected${config.webhookLastReceivedAt ? ` · last received ${new Date(config.webhookLastReceivedAt).toLocaleString()}` : ' · no uploads yet'}`
+                : 'The plugin signals the CMS the moment an image is uploaded to WordPress.'}
+            </p>
+          </div>
+          {config?.webhookEnabled ? (
+            <Button size="sm" variant="outline" onClick={doDisconnectWebhook} disabled={disconnectWebhook.isPending}>
+              Disconnect
+            </Button>
+          ) : (
+            <Button size="sm" onClick={doConnectWebhook} disabled={!r2Verified || connectWebhook.isPending} title={r2Verified ? '' : 'Verify R2 first'}>
+              Connect
+            </Button>
+          )}
+        </div>
+
+        <div className="h-px bg-white/8 my-1" />
+
+        {/* Nightly autopilot */}
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <Label className="text-[#e8eaed]">Nightly autopilot</Label>
+            <p className="text-[11px] text-[#9aa0a6]">
+              Optimizes only NEW images each night — never re-touches already-optimized ones.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={doRunAutopilot} disabled={!r2Verified || runAutopilot.isPending}>
+              {runAutopilot.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run now
+            </Button>
+            <Button
+              size="sm"
+              variant={config?.autopilotEnabled ? 'default' : 'outline'}
+              onClick={toggleAutopilot}
+              disabled={updateConfig.isPending}
+            >
+              {config?.autopilotEnabled ? 'On' : 'Off'}
+            </Button>
+          </div>
+        </div>
+
+        {runs && runs.length > 0 && (
+          <>
+            <div className="h-px bg-white/8 my-2" />
+            <div className="text-[11px] uppercase tracking-wide text-[#9aa0a6] mb-2">Recent runs</div>
+            <div className="space-y-1">
+              {runs.slice(0, 5).map((r) => (
+                <div key={r.id} className="flex items-center justify-between text-[12px]">
+                  <span className="text-[#9aa0a6]">
+                    {new Date(r.startedAt).toLocaleString()} · {r.triggeredBy} · {r.scope}
+                  </span>
+                  <span className="text-[#c9cdd4]">
+                    <span className="text-emerald-300">{r.optimized}</span> opt · {r.skipped} skip ·{' '}
+                    <span className="text-red-300">{r.failed}</span> fail · {formatBytes(r.bytesSavedSum)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Settings */}

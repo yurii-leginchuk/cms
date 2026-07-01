@@ -14,6 +14,8 @@ import { OptimizationConfigService } from './optimization-config.service';
 import { OptimizationStatsService } from './optimization-stats.service';
 import { R2SetupService } from './r2-setup.service';
 import { CdnSetupService } from './cdn-setup.service';
+import { OptimizationAutopilotService } from './optimization-autopilot.service';
+import { WebhookSetupService } from './webhook-setup.service';
 import { UpdateOptimizationConfigDto } from './dto/update-optimization-config.dto';
 import { RunOptimizationDto } from './dto/run-optimization.dto';
 import { UpdateR2ConfigDto } from './dto/update-r2-config.dto';
@@ -35,6 +37,8 @@ export class OptimizationController {
     private readonly statsService: OptimizationStatsService,
     private readonly r2SetupService: R2SetupService,
     private readonly cdnSetupService: CdnSetupService,
+    private readonly autopilotService: OptimizationAutopilotService,
+    private readonly webhookSetupService: WebhookSetupService,
   ) {}
 
   /** Per-site settings (redacted — secrets exposed only as isSet booleans). */
@@ -109,6 +113,29 @@ export class OptimizationController {
   @HttpCode(HttpStatus.OK)
   disableRewrite(@Param('siteId') siteId: string) {
     return this.cdnSetupService.disableRewrite(siteId);
+  }
+
+  // ── Automation (Phase 4) ────────────────────────────────────────────────────
+
+  /** Connect auto-optimize-on-upload: generate secret + push webhook config to plugin. */
+  @Post('config/webhook/connect')
+  @HttpCode(HttpStatus.OK)
+  connectWebhook(@Param('siteId') siteId: string) {
+    return this.webhookSetupService.connect(siteId);
+  }
+
+  /** Disconnect auto-optimize-on-upload. */
+  @Post('config/webhook/disconnect')
+  @HttpCode(HttpStatus.OK)
+  disconnectWebhook(@Param('siteId') siteId: string) {
+    return this.webhookSetupService.disconnect(siteId);
+  }
+
+  /** Manually run the optimize autopilot now (new_only). */
+  @Post('autopilot')
+  @HttpCode(HttpStatus.OK)
+  autopilot(@Param('siteId') siteId: string) {
+    return this.autopilotService.runManual(siteId);
   }
 
   /** Honest optimization stats (current-state; single source of truth). */

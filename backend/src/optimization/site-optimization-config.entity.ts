@@ -123,6 +123,23 @@ export class SiteOptimizationConfig {
   @Column({ type: 'boolean', default: false })
   rewriteEnabled: boolean;
 
+  // ── Automation (Phase 4) ────────────────────────────────────────────────────
+
+  /** Nightly optimize autopilot on/off for this site. */
+  @Column({ type: 'boolean', default: false })
+  autopilotEnabled: boolean;
+
+  /** Auto-optimize new uploads (plugin → CMS webhook) on/off. */
+  @Column({ type: 'boolean', default: false })
+  webhookEnabled: boolean;
+
+  /** Shared secret for the plugin→CMS webhook — AES-256-GCM encrypted, never returned. */
+  @Column({ type: 'text', nullable: true })
+  webhookSecretEnc: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  webhookLastReceivedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

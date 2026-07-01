@@ -23,6 +23,7 @@ import { SiteOptimizationConfig, R2Status } from './site-optimization-config.ent
 import { OptimizationConfigService } from './optimization-config.service';
 import { ImageProcessingService, sha256 } from './image-processing.service';
 import { R2Service } from './r2.service';
+import { CdnPublishService } from './cdn-publish.service';
 import { R2Credentials, mapS3Error } from './r2-helpers';
 import {
   computeSettingsFingerprint,
@@ -61,7 +62,20 @@ export class OptimizationService {
     private readonly processing: ImageProcessingService,
     private readonly wpMediaService: WpMediaService,
     private readonly r2Service: R2Service,
+    private readonly cdnPublishService: CdnPublishService,
   ) {}
+
+  private emptyAcc(): RunAccumulator {
+    return {
+      processed: 0,
+      optimized: 0,
+      skipped: 0,
+      failed: 0,
+      originalBytesSum: 0,
+      optimizedBytesSum: 0,
+      bytesSavedSum: 0,
+    };
+  }
 
   /**
    * Decrypted R2 creds IFF uploads should happen (enabled + verified + complete).
@@ -132,6 +146,102 @@ export class OptimizationService {
     );
 
     return { runId: run.id };
+  }
+
+  /**
+   * Run to completion and return the finished run (used by the autopilot, which
+   * needs to await the result before publishing). Same engine as startRun.
+   */
+  async runBlocking(
+    siteId: string,
+    scope: OptimizationRunScope,
+    triggeredBy: OptimizationRunTrigger,
+  ): Promise<ImageOptimizationRun> {
+    const config = await this.configService.getOrCreate(siteId);
+    const fingerprint = this.fingerprintFor(config);
+    const run = await this.runRepo.save(
+      this.runRepo.create({
+        siteId,
+        scope,
+        triggeredBy,
+        settingsSnapshot: {
+          quality: config.quality,
+          webpEnabled: config.webpEnabled,
+          maxWidth: config.maxWidth,
+        },
+        settingsFingerprint: fingerprint,
+        status: OptimizationRunStatus.RUNNING,
+      }),
+    );
+    await this.executeRun(run.id, siteId, scope, config, fingerprint);
+    return this.getRun(run.id);
+  }
+
+  /**
+   * Optimize a SINGLE WordPress attachment (the new-upload webhook path).
+   * Strictly `new_only`: an already-optimized attachment is a no-op (duplicate
+   * webhooks are safe). Optimizes → uploads to R2 → publishes just that mapping
+   * if rewriting is live. Never force-reoptimizes here.
+   */
+  async optimizeSingleAttachment(
+    siteId: string,
+    wpAttachmentId: number,
+  ): Promise<{ status: string }> {
+    const config = await this.configService.getOrCreate(siteId);
+    if (!config.enabled || config.r2Status !== R2Status.VERIFIED) {
+      return { status: 'skipped_disabled' };
+    }
+
+    // Materialise the new attachment into the inventory (idempotent upsert).
+    try {
+      await this.wpMediaService.ingest(siteId);
+    } catch (err) {
+      this.logger.warn(
+        `Webhook ingest failed for site ${siteId}: ${(err as Error).message}`,
+      );
+    }
+
+    const image = await this.imageRepo.findOne({ where: { siteId, wpAttachmentId } });
+    if (!image) return { status: 'not_found' };
+
+    const fingerprint = this.fingerprintFor(config);
+    const existing = await this.optRepo.findOne({ where: { imageId: image.id } });
+
+    // Idempotency: never re-touch an already-optimized image (new_only).
+    if (!shouldProcess(OptimizationRunScope.NEW_ONLY, existing, fingerprint)) {
+      return { status: 'already_optimized' };
+    }
+
+    const acc = this.emptyAcc();
+    await this.processOne(
+      siteId,
+      image.id,
+      image.canonicalUrl,
+      config,
+      fingerprint,
+      null,
+      existing,
+      OptimizationRunScope.NEW_ONLY,
+      acc,
+      this.resolveUploadCreds(config),
+    );
+
+    // Publish just this mapping if rewriting is live.
+    if (config.rewriteEnabled && image.wpAttachmentId) {
+      const row = await this.optRepo.findOne({ where: { imageId: image.id } });
+      const site = await this.siteRepo.findOne({ where: { id: siteId } });
+      if (row?.r2Uploaded && site) {
+        try {
+          await this.cdnPublishService.publishOne(config, site, row, Number(image.wpAttachmentId));
+        } catch (err) {
+          this.logger.warn(`Webhook publish failed: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    return {
+      status: acc.optimized ? 'optimized' : acc.skipped ? 'skipped' : 'failed',
+    };
   }
 
   private async executeRun(

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ScraperService } from '../scraper/scraper.service';
 import { ImageAutopilotService } from '../images/image-autopilot.service';
+import { OptimizationAutopilotService } from '../optimization/optimization-autopilot.service';
 
 @Injectable()
 export class SchedulerService {
@@ -10,6 +11,7 @@ export class SchedulerService {
   constructor(
     private readonly scraperService: ScraperService,
     private readonly imageAutopilotService: ImageAutopilotService,
+    private readonly optimizationAutopilotService: OptimizationAutopilotService,
   ) {}
 
   // Every day at 2:00 AM
@@ -26,5 +28,13 @@ export class SchedulerService {
   async handleNightlyAltAutopilot() {
     this.logger.log('Nightly ALT autopilot triggered');
     await this.imageAutopilotService.runForAllSites();
+  }
+
+  // Every day at 4:00 AM — after ALT autopilot. Optimizes only NEW images
+  // (new_only), uploads to R2, and publishes new CDN mappings if rewrite is on.
+  @Cron('0 4 * * *')
+  async handleNightlyOptimizeAutopilot() {
+    this.logger.log('Nightly optimize autopilot triggered');
+    await this.optimizationAutopilotService.runForAllSites();
   }
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { Site } from '../sites/site.entity';
 import { SiteImage } from '../images/site-image.entity';
 import { ImageModule } from '../images/image.module';
@@ -17,7 +18,12 @@ import { R2SetupService } from './r2-setup.service';
 import { CloudflareCdnService } from './cloudflare-cdn.service';
 import { CdnPublishService } from './cdn-publish.service';
 import { CdnSetupService } from './cdn-setup.service';
+import { OptimizationAutopilotService } from './optimization-autopilot.service';
+import { OptimizationProcessor, OPTIMIZE_QUEUE } from './optimization.processor';
+import { WebhookService } from './webhook.service';
+import { WebhookSetupService } from './webhook-setup.service';
 import { OptimizationController } from './optimization.controller';
+import { WebhookController } from './webhook.controller';
 
 /**
  * Image Optimization.
@@ -37,8 +43,9 @@ import { OptimizationController } from './optimization.controller';
     ]),
     ImageModule,
     CryptoModule,
+    BullModule.registerQueue({ name: OPTIMIZE_QUEUE }),
   ],
-  controllers: [OptimizationController],
+  controllers: [OptimizationController, WebhookController],
   providers: [
     ImageProcessingService,
     OptimizationConfigService,
@@ -50,7 +57,15 @@ import { OptimizationController } from './optimization.controller';
     CloudflareCdnService,
     CdnPublishService,
     CdnSetupService,
+    OptimizationAutopilotService,
+    OptimizationProcessor,
+    WebhookService,
+    WebhookSetupService,
   ],
-  exports: [OptimizationService, OptimizationConfigService],
+  exports: [
+    OptimizationService,
+    OptimizationConfigService,
+    OptimizationAutopilotService,
+  ],
 })
 export class OptimizationModule {}
