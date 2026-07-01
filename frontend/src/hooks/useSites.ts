@@ -80,6 +80,12 @@ export function useUpsertBrief(siteId: string) {
   })
 }
 
+export function usePurgeCache(siteId: string) {
+  return useMutation({
+    mutationFn: () => sitesApi.purgeCache(siteId),
+  })
+}
+
 export function useWpStatus(siteId: string) {
   return useQuery({
     queryKey: ['sites', siteId, 'wp-status'],

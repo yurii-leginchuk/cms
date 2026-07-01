@@ -1,6 +1,6 @@
 import apiClient from './client'
 
-export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana'
+export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana' | 'redirect'
 export type McpChangeStatus = 'pending' | 'accepted' | 'rejected'
 export type McpChangeAction =
   | 'meta.update'
@@ -14,6 +14,11 @@ export type McpChangeAction =
   | 'asana.assignee'
   | 'asana.subtask'
   | 'asana.link'
+  | 'redirect.create'
+  | 'redirect.update'
+  | 'redirect.delete'
+  | 'redirect.enable'
+  | 'redirect.disable'
 
 export interface McpChangeRequest {
   id: string
@@ -39,6 +44,7 @@ export interface McpChangeCounts {
   schema: number
   alt: number
   asana: number
+  redirect: number
 }
 
 export interface BulkResult {

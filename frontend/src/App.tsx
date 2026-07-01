@@ -17,6 +17,7 @@ import SiteChatPage from '@/pages/SiteChatPage'
 import SitePageSpeedPage from '@/pages/SitePageSpeedPage'
 import SiteIndexStatusPage from '@/pages/SiteIndexStatusPage'
 import IndexStatusDetailPage from '@/pages/IndexStatusDetailPage'
+import SiteRedirectsPage from '@/pages/SiteRedirectsPage'
 import SiteTasksPage from '@/pages/SiteTasksPage'
 import TaskDetailPage from '@/pages/TaskDetailPage'
 import AsanaSettingsPage from '@/pages/AsanaSettingsPage'
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="sites/:id/pagespeed" element={<SitePageSpeedPage />} />
           <Route path="sites/:id/index-status" element={<SiteIndexStatusPage />} />
           <Route path="sites/:id/index-status/:pageId" element={<IndexStatusDetailPage />} />
+          <Route path="sites/:id/redirects" element={<SiteRedirectsPage />} />
           <Route path="sites/:id/tasks" element={<SiteTasksPage />} />
           <Route path="sites/:id/tasks/:taskGid" element={<TaskDetailPage />} />
           <Route path="sites/:id/impact" element={<ImpactPage />} />

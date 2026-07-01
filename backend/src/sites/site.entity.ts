@@ -47,6 +47,10 @@ export class Site {
   @Column({ length: 500, nullable: true })
   gscProperty: string | null;
 
+  /** Whether this site is hosted on WP Engine — gates the WP Engine cache-purge layer. */
+  @Column({ type: 'boolean', default: false })
+  hostedOnWpEngine: boolean;
+
   @Column({ type: 'enum', enum: SiteStatus, default: SiteStatus.IDLE })
   status: SiteStatus;
 

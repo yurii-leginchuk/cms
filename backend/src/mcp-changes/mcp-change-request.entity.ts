@@ -16,7 +16,7 @@ import {
  *   accept = apply the proposed change to the module AND publish to WordPress.
  *   reject = discard.
  */
-export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana';
+export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana' | 'redirect';
 export type McpChangeStatus = 'pending' | 'accepted' | 'rejected';
 
 /** Fine-grained action discriminator (drives accept() dispatch). */
@@ -31,7 +31,12 @@ export type McpChangeAction =
   | 'asana.status'
   | 'asana.assignee'
   | 'asana.subtask'
-  | 'asana.link';
+  | 'asana.link'
+  | 'redirect.create'
+  | 'redirect.update'
+  | 'redirect.delete'
+  | 'redirect.enable'
+  | 'redirect.disable';
 
 @Entity('mcp_change_requests')
 @Index(['siteId', 'status'])
@@ -51,9 +56,9 @@ export class McpChangeRequest {
 
   /** What the change targets — used to dispatch + to render in the queue. */
   @Column({ type: 'varchar', length: 16 })
-  targetType: 'page' | 'image' | 'task';
+  targetType: 'page' | 'image' | 'task' | 'redirect';
 
-  /** UUID of the target page or image. */
+  /** UUID of the target page / image / redirect (empty for a redirect create). */
   @Column({ type: 'varchar', length: 64 })
   targetId: string;
 

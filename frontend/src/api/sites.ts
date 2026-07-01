@@ -9,12 +9,28 @@ export interface Site {
   wpApiKey: string | null
   status: 'idle' | 'parsing' | 'done' | 'error'
   embeddingStatus: 'idle' | 'embedding' | 'done' | 'error'
+  hostedOnWpEngine: boolean
   pagesTotal: number
   pagesProcessed: number
   lastParsedAt: string | null
   pagesCount: number
   createdAt: string
   updatedAt: string
+}
+
+export type PurgeLayer = 'plugin' | 'wpengine' | 'cloudflare'
+export type PurgeStatus = 'success' | 'skipped' | 'failed'
+
+export interface PurgeLayerResult {
+  layer: PurgeLayer
+  label: string
+  status: PurgeStatus
+  detail?: string
+}
+
+export interface PurgeCacheResult {
+  siteId: string
+  results: PurgeLayerResult[]
 }
 
 export interface CreateSitePayload {
@@ -26,6 +42,7 @@ export interface CreateSitePayload {
 export interface UpdateSitePayload {
   name?: string
   wpApiKey?: string | null
+  hostedOnWpEngine?: boolean
 }
 
 export interface SiteBrief {
@@ -103,6 +120,13 @@ export const sitesApi = {
   wpStatus: async (id: string): Promise<{ connected: boolean; reason?: string }> => {
     const { data } = await apiClient.get<{ data: { connected: boolean; reason?: string } }>(
       `/api/sites/${id}/wp-status`,
+    )
+    return data.data
+  },
+
+  purgeCache: async (id: string): Promise<PurgeCacheResult> => {
+    const { data } = await apiClient.post<{ data: PurgeCacheResult }>(
+      `/api/sites/${id}/purge-cache`,
     )
     return data.data
   },

@@ -60,6 +60,33 @@ export class CloudflareCdnService {
     }
   }
 
+  /**
+   * Purge the ENTIRE Cloudflare cache for a zone (POST /zones/:id/purge_cache
+   * with { purge_everything: true }). Reuses the per-site CF API token stored by
+   * the image-optimization module — that token needs the "Cache Purge" permission
+   * on the zone (in addition to its R2/DNS scopes) for this call to succeed.
+   *
+   * Throws a scrubbed Error on failure; the token is never logged.
+   */
+  async purgeEverything(zoneId: string, token: string): Promise<void> {
+    try {
+      await axios.post(
+        `https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`,
+        { purge_everything: true },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15_000 },
+      );
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        const errors = err.response?.data?.errors as { message?: string }[] | undefined;
+        const message = Array.isArray(errors) ? errors[0]?.message ?? '' : '';
+        this.logger.warn(`Zone cache purge failed (status ${status ?? 'n/a'})`);
+        throw new Error(mapCfError(status, message));
+      }
+      throw new Error('Cloudflare request failed.');
+    }
+  }
+
   /** Poll the custom-domain status and map it to our DnsStatus. */
   async getCustomDomainStatus(
     accountId: string,
