@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import {
   ComposedChart, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ReferenceLine,
   Brush, ResponsiveContainer, usePlotArea, useXAxisScale,
 } from 'recharts'
 import type { SeriesPoint, ChangeEvent, ChangeEventType } from '@/api/impact'
+import { clusterEvents, categoryMix, clusterPageCount, CATEGORY_META, type EventCluster } from './cluster'
 
 export type ImpactMetric = 'clicks' | 'impressions' | 'ctr' | 'position'
 export type ImpactMetricSel = ImpactMetric | 'all'
@@ -23,11 +24,16 @@ export const TYPE_META: Record<ChangeEventType, { label: string; color: string }
   meta: { label: 'Meta', color: '#4e8af4' },
   technical: { label: 'Technical', color: '#a78bfa' },
   schema: { label: 'Schema', color: '#34d399' },
+  alt: { label: 'ALT text', color: '#fbbf24' },
+  task: { label: 'Tasks', color: '#fb7185' },
+  manual: { label: 'Manual', color: '#94a3b8' },
 }
 
-const LANE_ORDER: ChangeEventType[] = ['meta', 'technical', 'schema']
+// Single unified "Changes" lane below the plot: one glyph per time-cluster,
+// its fill encoding the category mix. (Replaced the old per-type lane stack,
+// which broke at 6–7 categories and couldn't host a cross-category cluster.)
 const LANE_TOP_GAP = 12
-const LANE_ROW_H = 16
+const LANE_H = 30
 
 function metricValue(p: SeriesPoint, metric: ImpactMetric): number {
   switch (metric) {
@@ -62,89 +68,121 @@ function smoothPoints(points: SeriesPoint[], window = 7): SeriesPoint[] {
 
 interface LanesProps {
   events: ChangeEvent[]
-  enabledTypes: ChangeEventType[]
-  selectedId: string | null
-  onSelect: (ev: ChangeEvent, cluster: ChangeEvent[]) => void
+  selectedIds: Set<string>
+  scope: 'global' | 'page'
+  onSelect: (cluster: ChangeEvent[]) => void
   onHoverDay: (day: string | null) => void
 }
 
-interface ClusterDot { x: number; events: ChangeEvent[] }
+/** SVG pie slice from `start` to `end` degrees (12 o'clock = 0). */
+function arcPath(cx: number, cy: number, r: number, start: number, end: number): string {
+  const a0 = ((start - 90) * Math.PI) / 180
+  const a1 = ((end - 90) * Math.PI) / 180
+  const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0)
+  const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1)
+  const large = end - start > 180 ? 1 : 0
+  return `M${cx},${cy} L${x0},${y0} A${r},${r} 0 ${large} 1 ${x1},${y1} Z`
+}
+
+/** A cluster marker whose fill encodes the category mix. */
+function ClusterGlyph({
+  cluster, x, y, selected, scope, onSelect, onHoverDay,
+}: {
+  cluster: EventCluster
+  x: number
+  y: number
+  selected: boolean
+  scope: 'global' | 'page'
+  onSelect: (cluster: ChangeEvent[]) => void
+  onHoverDay: (day: string | null) => void
+}) {
+  const mix = categoryMix(cluster.events)
+  const measurable = cluster.events.some((e) => e.measurable)
+  const pages = clusterPageCount(cluster.events)
+  const n = cluster.events.length
+  const r = selected ? 6 : 5
+  const total = mix.reduce((s, m) => s + m.count, 0)
+  const tip =
+    `${n} change${n === 1 ? '' : 's'}` +
+    (scope === 'global' && pages ? ` · ${pages} page${pages === 1 ? '' : 's'}` : '') +
+    ` · ${mix.map((m) => `${m.count} ${CATEGORY_META[m.category].label.toLowerCase()}`).join(', ')}` +
+    ` · ${cluster.firstDay}${cluster.lastDay !== cluster.firstDay ? `–${cluster.lastDay}` : ''}`
+
+  let body: ReactNode
+  if (mix.length > 3) {
+    // Legibility over completeness: neutral dot, mix shown on hover/in the Sheet.
+    body = <circle cx={x} cy={y} r={r} fill={measurable ? '#9aa0a6' : '#1a1d27'} stroke="#9aa0a6" strokeWidth={1.5} strokeDasharray={measurable ? undefined : '2 2'} />
+  } else if (mix.length === 1) {
+    const color = CATEGORY_META[mix[0].category].color
+    body = <circle cx={x} cy={y} r={r} fill={measurable ? color : '#1a1d27'} stroke={color} strokeWidth={1.5} strokeDasharray={measurable ? undefined : '2 2'} />
+  } else {
+    let acc = 0
+    body = (
+      <g>
+        {mix.map((m) => {
+          const start = (acc / total) * 360
+          acc += m.count
+          const end = (acc / total) * 360
+          const color = CATEGORY_META[m.category].color
+          return <path key={m.category} d={arcPath(x, y, r, start, end)} fill={color} fillOpacity={measurable ? 1 : 0.3} />
+        })}
+        <circle cx={x} cy={y} r={r} fill="none" stroke="#ffffff40" strokeWidth={0.75} strokeDasharray={measurable ? undefined : '2 2'} />
+      </g>
+    )
+  }
+
+  return (
+    <g
+      style={{ cursor: 'pointer' }}
+      onClick={() => onSelect(cluster.events)}
+      onMouseEnter={() => onHoverDay(cluster.anchorDay)}
+      onMouseLeave={() => onHoverDay(null)}
+    >
+      <title>{tip}</title>
+      <circle cx={x} cy={y} r={11} fill="transparent" />
+      {selected && <circle cx={x} cy={y} r={r + 3.5} fill="none" stroke="#4e8af4" strokeOpacity={0.5} strokeWidth={1.5} />}
+      {body}
+      {n > 1 && (
+        <text x={x} y={y - r - 3} textAnchor="middle" fontSize={9} fill="#e8eaed" fontWeight={600}>{n}</text>
+      )}
+      {scope === 'global' && pages > 1 && (
+        <text x={x} y={y + r + 9} textAnchor="middle" fontSize={8} fill="#9aa0a6">{pages}p</text>
+      )}
+    </g>
+  )
+}
 
 /**
  * SVG layer rendered inside the chart (recharts 3 hooks share the exact x-scale):
- * one lane per change type beneath the plot area, with clustered, clickable
- * markers. Must be a child of the chart so the hooks resolve.
+ * ONE unified lane beneath the plot. Events are already category-filtered by the
+ * parent; we re-cluster them (anchor-fixed, GROUP_WINDOW_DAYS) so the dot count
+ * always matches the enabled set. Must be a child of the chart so the hooks resolve.
  */
-function MarkerLanes({ events, enabledTypes, selectedId, onSelect, onHoverDay }: LanesProps) {
+function MarkerLanes({ events, selectedIds, scope, onSelect, onHoverDay }: LanesProps) {
   const plot = usePlotArea()
   const scale = useXAxisScale()
   if (!plot || !scale) return null
-  const laneTop = plot.y + plot.height + LANE_TOP_GAP
+  const y = plot.y + plot.height + LANE_TOP_GAP + LANE_H / 2
 
-  const lanes = LANE_ORDER.filter((t) => enabledTypes.includes(t))
+  const clusters = clusterEvents(events)
+  const placed = clusters
+    .map((c) => ({ c, x: scale(c.anchorDay) }))
+    .filter((p): p is { c: EventCluster; x: number } => p.x !== undefined && !Number.isNaN(p.x))
 
   return (
     <g>
-      {lanes.map((type, li) => {
-        const y = laneTop + li * LANE_ROW_H + LANE_ROW_H / 2
-        const color = TYPE_META[type].color
-        const placed: ClusterDot[] = []
-        for (const ev of events) {
-          if (ev.type !== type) continue
-          const x = scale(ev.day)
-          if (x === undefined || Number.isNaN(x)) continue
-          const cx = x
-          const near = placed.find((c) => Math.abs(c.x - cx) < 9)
-          if (near) near.events.push(ev)
-          else placed.push({ x: cx, events: [ev] })
-        }
-        return (
-          <g key={type}>
-            <text x={plot.x - 8} y={y + 3} textAnchor="end" fontSize={9} fill="#9aa0a6">
-              {TYPE_META[type].label}
-            </text>
-            <line
-              x1={plot.x} x2={plot.x + plot.width} y1={y} y2={y}
-              stroke="#ffffff0d" strokeWidth={1}
-            />
-            {placed.map((c) => {
-              const lead = c.events[0]
-              const selected = c.events.some((e) => e.id === selectedId)
-              const pending = lead.effectStatus === 'pending'
-              const dead = lead.effectStatus === 'no_data' || lead.measurable === false
-              const r = selected ? 5.5 : 4.5
-              return (
-                <g
-                  key={lead.id}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onSelect(lead, c.events)}
-                  onMouseEnter={() => onHoverDay(lead.day)}
-                  onMouseLeave={() => onHoverDay(null)}
-                >
-                  <title>
-                    {lead.summary}
-                    {c.events.length > 1 ? ` (+${c.events.length - 1} more)` : ''} · {lead.day}
-                  </title>
-                  <circle cx={c.x} cy={y} r={9} fill="transparent" />
-                  <circle
-                    cx={c.x} cy={y} r={r}
-                    fill={dead || pending ? '#1a1d27' : color}
-                    stroke={color}
-                    strokeWidth={1.5}
-                    strokeDasharray={dead ? '2 2' : undefined}
-                  />
-                  {selected && <circle cx={c.x} cy={y} r={r + 3} fill="none" stroke={color} strokeOpacity={0.4} />}
-                  {c.events.length > 1 && (
-                    <text x={c.x} y={y - 8} textAnchor="middle" fontSize={9} fill={color} fontWeight={600}>
-                      {c.events.length}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
-          </g>
-        )
-      })}
+      <text x={plot.x - 8} y={y + 3} textAnchor="end" fontSize={9} fill="#9aa0a6">Changes</text>
+      <line x1={plot.x} x2={plot.x + plot.width} y1={y} y2={y} stroke="#ffffff0d" strokeWidth={1} />
+      {placed.map(({ c, x }) => (
+        <ClusterGlyph
+          key={c.events[0].id}
+          cluster={c} x={x} y={y}
+          selected={c.events.some((e) => selectedIds.has(e.id))}
+          scope={scope}
+          onSelect={onSelect}
+          onHoverDay={onHoverDay}
+        />
+      ))}
     </g>
   )
 }
@@ -198,9 +236,8 @@ function MetricPanel({
   const provisional = points.filter((p) => p.provisional)
   const firstProvisional = provisional[0]?.date
   const lastDate = points[points.length - 1]?.date
-  const laneCount = lanes ? LANE_ORDER.filter((t) => lanes.enabledTypes.includes(t)).length : 0
   const bottomMargin =
-    (lanes ? LANE_TOP_GAP + laneCount * LANE_ROW_H : 0) + (showXTicks ? 22 : 6) + (enableBrush ? BRUSH_H + 6 : 0)
+    (lanes ? LANE_TOP_GAP + LANE_H : 0) + (showXTicks ? 22 : 6) + (enableBrush ? BRUSH_H + 6 : 0)
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -280,15 +317,15 @@ function MetricPanel({
 }
 
 export function ImpactTimeline({
-  points, events, metric, enabledTypes, selectedId, onSelectEvent, onHoverDay, hoveredDay, smooth,
+  points, events, metric, scope, selectedIds, onSelectCluster, onHoverDay, hoveredDay, smooth,
   annotations, comparePoints,
 }: {
   points: SeriesPoint[]
   events: ChangeEvent[]
   metric: ImpactMetricSel
-  enabledTypes: ChangeEventType[]
-  selectedId: string | null
-  onSelectEvent: (ev: ChangeEvent, cluster: ChangeEvent[]) => void
+  scope: 'global' | 'page'
+  selectedIds: Set<string>
+  onSelectCluster: (cluster: ChangeEvent[]) => void
   onHoverDay: (day: string | null) => void
   hoveredDay: string | null
   smooth?: boolean
@@ -296,9 +333,8 @@ export function ImpactTimeline({
   comparePoints?: SeriesPoint[]
 }) {
   const dateSet = useMemo(() => new Set(points.map((p) => p.date)), [points])
-  const selectedDay = events.find((e) => e.id === selectedId)?.day
-  const lanes: LanesProps = { events, enabledTypes, selectedId, onSelect: onSelectEvent, onHoverDay }
-  const laneCount = LANE_ORDER.filter((t) => enabledTypes.includes(t)).length
+  const selectedDay = events.find((e) => selectedIds.has(e.id))?.day
+  const lanes: LanesProps = { events, selectedIds, scope, onSelect: onSelectCluster, onHoverDay }
 
   if (metric === 'all') {
     return (
@@ -319,7 +355,7 @@ export function ImpactTimeline({
         ))}
         {/* Shared event lane strip + x-axis, aligned to the curves above. */}
         <MetricPanel
-          points={points} metric="clicks" height={44 + LANE_TOP_GAP + laneCount * LANE_ROW_H}
+          points={points} metric="clicks" height={44 + LANE_TOP_GAP + LANE_H}
           showXTicks hideArea lanes={lanes} annotations={annotations} annotationLabels
           onHoverDay={onHoverDay} syncId="impact-all" hideTooltip
           selectedDay={selectedDay} hoveredDay={hoveredDay} dateSet={dateSet}
@@ -328,7 +364,7 @@ export function ImpactTimeline({
     )
   }
 
-  const bottomExtra = LANE_TOP_GAP + laneCount * LANE_ROW_H
+  const bottomExtra = LANE_TOP_GAP + LANE_H
   return (
     <MetricPanel
       points={points} metric={metric} height={150 + bottomExtra + 22 + BRUSH_H + 6}

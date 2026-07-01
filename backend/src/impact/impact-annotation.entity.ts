@@ -32,6 +32,18 @@ export class ImpactAnnotation {
   @Column({ type: 'varchar', length: 200 })
   label: string;
 
+  /**
+   * Optional event kind for the marker's subtype + preset filtering, e.g.
+   * core-update | migration | redesign | tracking | pr | seasonality | external.
+   * null → a plain pin.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  type: string | null;
+
+  /** Optional reference link (e.g. a Search Central post about a core update). */
+  @Column({ type: 'varchar', length: 1024, nullable: true })
+  link: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

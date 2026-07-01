@@ -1,11 +1,23 @@
 import apiClient from './client'
 
-export type ChangeEventType = 'meta' | 'technical' | 'schema'
+export type ChangeEventType = 'meta' | 'technical' | 'schema' | 'alt' | 'task' | 'manual'
+export type ChangeEventCategory =
+  | 'meta-title'
+  | 'meta-description'
+  | 'technical'
+  | 'schema'
+  | 'alt'
+  | 'task'
+  | 'manual'
 export type ChangeEffectStatus = 'pending' | 'measured' | 'no_data'
 
 export interface ChangeEvent {
   id: string
   type: ChangeEventType
+  /** Finer bucket driving the per-category legend toggles (Phase 3). */
+  category: ChangeEventCategory
+  /** Time-based grouping id — events in one clusterId render as one marker. */
+  clusterId: string
   subtype: string
   pageId: string | null
   pageUrl: string
@@ -19,6 +31,9 @@ export interface ChangeEvent {
   effectStatus: ChangeEffectStatus | null
   effectId: string | null
   confoundedWith: number
+  /** Task events only (Phase 2). */
+  scope?: 'sitewide' | 'pages'
+  taskUrl?: string | null
 }
 
 export type ImpactScope = 'global' | 'page'
@@ -66,7 +81,17 @@ export interface ImpactAnnotation {
   pageId: string | null
   date: string
   label: string
+  type?: string | null
+  link?: string | null
   createdAt: string
+}
+
+export interface AnnotationInput {
+  date: string
+  label: string
+  pageId?: string | null
+  type?: string | null
+  link?: string | null
 }
 
 export interface PageQueryCell {
@@ -231,11 +256,18 @@ export const impactApi = {
     return data.data
   },
 
-  createAnnotation: async (
-    siteId: string, date: string, label: string, pageId?: string | null,
-  ): Promise<ImpactAnnotation> => {
+  createAnnotation: async (siteId: string, input: AnnotationInput): Promise<ImpactAnnotation> => {
     const { data } = await apiClient.post<{ data: ImpactAnnotation }>(
-      `/api/sites/${siteId}/impact/annotations`, { date, label, pageId: pageId ?? null },
+      `/api/sites/${siteId}/impact/annotations`, input,
+    )
+    return data.data
+  },
+
+  updateAnnotation: async (
+    siteId: string, id: string, patch: Partial<AnnotationInput>,
+  ): Promise<ImpactAnnotation> => {
+    const { data } = await apiClient.patch<{ data: ImpactAnnotation }>(
+      `/api/sites/${siteId}/impact/annotations/${id}`, patch,
     )
     return data.data
   },

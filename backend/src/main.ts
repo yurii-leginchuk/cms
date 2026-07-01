@@ -5,7 +5,9 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody:true captures the exact request bytes (req.rawBody) needed to verify
+  // Asana's X-Hook-Signature HMAC on the webhook route.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.setGlobalPrefix('api');
 

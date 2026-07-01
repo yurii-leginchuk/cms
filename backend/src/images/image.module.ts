@@ -5,6 +5,7 @@ import { Site } from '../sites/site.entity';
 import { BrandCard } from '../sites/brand-card.entity';
 import { SiteImage } from './site-image.entity';
 import { ImagePlacement } from './image-placement.entity';
+import { AltPublishEvent } from '../impact/alt-publish-event.entity';
 import { ImageService } from './image.service';
 import { ImageAiService } from './image-ai.service';
 import { ImageSyncService } from './image-sync.service';
@@ -16,7 +17,7 @@ import { TokenUsageModule } from '../token-usage/token-usage.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Page, Site, BrandCard, SiteImage, ImagePlacement]),
+    TypeOrmModule.forFeature([Page, Site, BrandCard, SiteImage, ImagePlacement, AltPublishEvent]),
     SettingsModule,
     TokenUsageModule,
   ],
