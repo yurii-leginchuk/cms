@@ -4,9 +4,16 @@ import { ga4Api } from '@/api/ga4'
 export function useGa4Status(siteId: string | undefined) {
   return useQuery({
     queryKey: ['ga4-status', siteId],
-    queryFn: () => ga4Api.status(siteId!),
+    queryFn: async () => {
+      const s = await ga4Api.status(siteId!)
+      // reason 'error' = transient backend failure (quota/timeout), NOT "not set up".
+      // Throw so react-query retries with backoff instead of caching a false "disconnected" for staleTime.
+      if (!s.connected && s.reason === 'error') throw new Error('GA4 status temporarily unavailable')
+      return s
+    },
     enabled: !!siteId,
     staleTime: 5 * 60 * 1000,
+    retry: 2,
   })
 }
 
