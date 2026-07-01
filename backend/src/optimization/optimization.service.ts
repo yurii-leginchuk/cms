@@ -19,9 +19,11 @@ import {
   OptimizationRunStatus,
   OptimizationRunTrigger,
 } from './image-optimization-run.entity';
-import { SiteOptimizationConfig } from './site-optimization-config.entity';
+import { SiteOptimizationConfig, R2Status } from './site-optimization-config.entity';
 import { OptimizationConfigService } from './optimization-config.service';
 import { ImageProcessingService, sha256 } from './image-processing.service';
+import { R2Service } from './r2.service';
+import { R2Credentials, mapS3Error } from './r2-helpers';
 import {
   computeSettingsFingerprint,
   isStale,
@@ -58,7 +60,24 @@ export class OptimizationService {
     private readonly configService: OptimizationConfigService,
     private readonly processing: ImageProcessingService,
     private readonly wpMediaService: WpMediaService,
+    private readonly r2Service: R2Service,
   ) {}
+
+  /**
+   * Decrypted R2 creds IFF uploads should happen (enabled + verified + complete).
+   * Never throws — a decrypt/config problem just disables upload for this run.
+   */
+  private resolveUploadCreds(config: SiteOptimizationConfig): R2Credentials | null {
+    if (!config.enabled || config.r2Status !== R2Status.VERIFIED) return null;
+    try {
+      return this.configService.getDecryptedCreds(config);
+    } catch (err) {
+      this.logger.warn(
+        `R2 creds unavailable (upload disabled this run): ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
 
   private fingerprintFor(config: SiteOptimizationConfig): string {
     return computeSettingsFingerprint({
@@ -138,6 +157,7 @@ export class OptimizationService {
     });
     const existingRows = await this.optRepo.find({ where: { siteId } });
     const existingById = new Map(existingRows.map((r) => [r.imageId, r]));
+    const uploadCreds = this.resolveUploadCreds(config);
 
     const candidates = images.filter((img) =>
       shouldProcess(scope, existingById.get(img.id) ?? null, fingerprint),
@@ -170,6 +190,7 @@ export class OptimizationService {
         existingById.get(img.id) ?? null,
         scope,
         acc,
+        uploadCreds,
       );
       await this.persistProgress(runId, acc);
     }
@@ -203,6 +224,7 @@ export class OptimizationService {
     existing: ImageOptimization | null,
     scope: OptimizationRunScope,
     acc: RunAccumulator,
+    uploadCreds: R2Credentials | null,
   ): Promise<void> {
     const row = existing ?? this.optRepo.create({ imageId, siteId });
     row.lastRunId = runId;
@@ -260,6 +282,10 @@ export class OptimizationService {
         row.skipReason = null;
         row.optimizedAt = new Date();
         acc.optimized++;
+        // Phase 2: upload the optimized artifact to R2 (never touches WP).
+        if (uploadCreds && result.buffer) {
+          await this.uploadToR2(row, uploadCreds, hash, result.format ?? 'webp', result.buffer);
+        }
       } else {
         row.state = ImageOptimizationState.SKIPPED;
         row.outputFormat = null;
@@ -295,6 +321,36 @@ export class OptimizationService {
       maxBodyLength: MAX_FETCH_BYTES,
     });
     return Buffer.from(res.data);
+  }
+
+  /**
+   * Upload the optimized artifact to R2 with a content-hashed (immutable) key,
+   * then HEAD-verify it exists. Failure NEVER fails the row: the local encode
+   * already succeeded, so we keep state OPTIMIZED, mark r2Uploaded=false, and
+   * record a scrubbed reason. Phase 3 will only rewrite URLs for r2Uploaded rows.
+   */
+  private async uploadToR2(
+    row: ImageOptimization,
+    creds: R2Credentials,
+    hash: string,
+    format: 'webp' | 'jpeg',
+    buffer: Buffer,
+  ): Promise<void> {
+    const ext = format === 'webp' ? 'webp' : 'jpg';
+    const contentType = format === 'webp' ? 'image/webp' : 'image/jpeg';
+    const key = `img/${hash}.${ext}`;
+    try {
+      await this.r2Service.put(creds, key, buffer, contentType);
+      await this.r2Service.headObject(creds, key); // verify the object landed
+      row.r2Key = key;
+      row.r2Uploaded = true;
+    } catch (err) {
+      row.r2Uploaded = false;
+      row.failureError = `R2 upload: ${mapS3Error(err)}`;
+      this.logger.warn(
+        `R2 upload failed for image ${row.imageId}: ${row.failureError}`,
+      );
+    }
   }
 
   private accToRunFields(acc: RunAccumulator) {
@@ -371,6 +427,7 @@ export class OptimizationService {
       existing,
       OptimizationRunScope.FORCE_ALL,
       acc,
+      this.resolveUploadCreds(config),
     );
 
     const row = await this.optRepo.findOne({ where: { imageId } });
@@ -449,6 +506,8 @@ export class OptimizationService {
         failureError: o?.failureError ?? null,
         isStale: o ? isStale(o, fingerprint) : false,
         optimizedAt: o?.optimizedAt ?? null,
+        r2Uploaded: o?.r2Uploaded ?? false,
+        r2Key: o?.r2Key ?? null,
       };
     });
 

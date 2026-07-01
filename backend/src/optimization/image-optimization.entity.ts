@@ -26,8 +26,9 @@ import { bigintTransformer } from './numeric.transformer';
  * `settingsFingerprint` against the config's current fingerprint, so a settings
  * change can never leave a frozen-stale row behind (analyst P0-3).
  *
- * PHASE 2 will ADD (later migration): r2Key, r2Uploaded, rewriteLive,
- * rewriteVerifiedAt — the upload/serving facts, kept separate from "optimized".
+ * PHASE 2 (this file) adds r2Key + r2Uploaded — the upload facts, kept separate
+ * from "optimized" (local encode success). PHASE 3 will ADD rewriteLive /
+ * rewriteVerifiedAt (the live-serving facts).
  */
 export enum ImageOptimizationState {
   NOT_OPTIMIZED = 'not_optimized',
@@ -111,6 +112,15 @@ export class ImageOptimization {
   /** The run that last touched this row (audit trail). */
   @Column({ type: 'uuid', nullable: true })
   lastRunId: string | null;
+
+  // ── R2 upload facts (Phase 2) ───────────────────────────────────────────────
+  /** Object key of the optimized artifact in the site's R2 bucket (content-hashed). */
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  r2Key: string | null;
+
+  /** True once the optimized artifact is uploaded AND HEAD-verified in R2. */
+  @Column({ type: 'boolean', default: false })
+  r2Uploaded: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

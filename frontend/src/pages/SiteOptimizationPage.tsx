@@ -3,6 +3,7 @@ import { useParams, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Zap, ShieldCheck, Play, RefreshCw, Search, ImageOff, Loader2, X,
+  Cloud, AlertTriangle, CheckCircle2, Database,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,8 +18,9 @@ import {
   useOptimizationConfig, useUpdateOptimizationConfig, useOptimizationStats,
   useOptimizationImages, useStartOptimizationRun, useOptimizationRun,
   useCancelOptimizationRun, useReoptimizeImage,
+  useUpdateR2Config, useCreateR2Bucket, useTestR2Connection,
 } from '@/hooks/useOptimization'
-import type { OptimizationScope, OptimizationState } from '@/api/optimization'
+import type { OptimizationScope, OptimizationState, R2Status } from '@/api/optimization'
 
 const LIMIT = 25
 const ACCENT = '#4e8af4'
@@ -64,6 +66,35 @@ function StateBadge({ state, stale }: { state: OptimizationState; stale?: boolea
   )
 }
 
+function R2StatusChip({ status }: { status: R2Status }) {
+  const map: Record<R2Status, { label: string; cls: string }> = {
+    untested: { label: 'R2: not tested', cls: 'text-[#9aa0a6] bg-white/5' },
+    verified: { label: 'R2: verified', cls: 'text-emerald-300 bg-emerald-400/10' },
+    failed: { label: 'R2: failed', cls: 'text-red-300 bg-red-400/10' },
+  }
+  const s = map[status]
+  return <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${s.cls}`}>{s.label}</span>
+}
+
+/** Masked secret input: shows "•••• set" placeholder when already stored. */
+function SecretInput({
+  label, isSet, value, onChange, placeholder,
+}: { label: string; isSet: boolean; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <Label className="text-[#e8eaed]">{label}</Label>
+      <Input
+        type="password"
+        autoComplete="off"
+        value={value}
+        placeholder={isSet ? '•••• set — leave blank to keep' : placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1"
+      />
+    </div>
+  )
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
@@ -84,6 +115,13 @@ export default function SiteOptimizationPage() {
   const startRun = useStartOptimizationRun(siteId!)
   const cancelRun = useCancelOptimizationRun(siteId!)
   const reoptimize = useReoptimizeImage(siteId!)
+  const updateR2 = useUpdateR2Config(siteId!)
+  const createBucket = useCreateR2Bucket(siteId!)
+  const testR2 = useTestR2Connection(siteId!)
+
+  // ── R2 credential form (write-only; blank = keep existing) ─────────────────
+  const [r2Form, setR2Form] = useState({ r2AccountId: '', r2AccessKeyId: '', r2Secret: '', cfApiToken: '' })
+  const [bucketName, setBucketName] = useState('')
 
   // ── Run tracking (poll while active, mirroring PageSpeed) ──────────────────
   const [runId, setRunId] = useState<string | null>(null)
@@ -153,6 +191,43 @@ export default function SiteOptimizationPage() {
     })
   }
 
+  const saveR2 = () => {
+    const patch: Record<string, string> = {}
+    if (r2Form.r2AccountId.trim()) patch.r2AccountId = r2Form.r2AccountId.trim()
+    if (r2Form.r2AccessKeyId.trim()) patch.r2AccessKeyId = r2Form.r2AccessKeyId.trim()
+    if (r2Form.r2Secret) patch.r2Secret = r2Form.r2Secret
+    if (r2Form.cfApiToken) patch.cfApiToken = r2Form.cfApiToken
+    if (Object.keys(patch).length === 0) { toast.message('Nothing to save'); return }
+    updateR2.mutate(patch, {
+      onSuccess: () => {
+        toast.success('R2 credentials saved (encrypted)')
+        setR2Form({ r2AccountId: '', r2AccessKeyId: '', r2Secret: '', cfApiToken: '' })
+      },
+      onError: (e) => toast.error((e as Error).message),
+    })
+  }
+
+  const doCreateBucket = () => {
+    createBucket.mutate(bucketName.trim() || undefined, {
+      onSuccess: (r) =>
+        toast.success(r.existed ? `Using existing bucket "${r.bucket}"` : `Bucket "${r.bucket}" created`),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  }
+
+  const doTestR2 = () => {
+    testR2.mutate(undefined, {
+      onSuccess: (c) =>
+        c.r2Status === 'verified'
+          ? toast.success('R2 connection verified')
+          : toast.error(c.r2LastError || 'R2 test failed'),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  }
+
+  const canCreateBucket = !!config && config.r2AccountIdSet && config.cfApiTokenSet
+  const canTestR2 = !!config && config.r2AccessKeyIdSet && config.r2SecretSet && !!config.r2Bucket
+
   const progressPct = run && run.imagesConsidered > 0
     ? Math.round((run.processed / run.imagesConsidered) * 100)
     : 0
@@ -170,17 +245,126 @@ export default function SiteOptimizationPage() {
             Compress and convert the media library to WebP. {site?.name}
           </p>
         </div>
+        {config && <R2StatusChip status={config.r2Status} />}
       </div>
 
       {/* Safety card — persistent trust surface */}
-      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] px-4 py-3 mb-5 flex gap-3">
+      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] px-4 py-3 mb-4 flex gap-3">
         <ShieldCheck className="size-4 text-emerald-300 mt-0.5 flex-shrink-0" />
         <p className="text-[12px] text-[#c9cdd4] leading-relaxed">
           <span className="text-emerald-300 font-medium">Images never disappear.</span>{' '}
-          Phase 1 only measures and stores optimization results locally — nothing on your live
-          site changes yet. CDN upload and URL rewriting (with a guaranteed fallback to the
-          original WordPress URL) arrive in later phases.
+          Optimized copies are uploaded to your private Cloudflare R2 bucket; your live site
+          still serves the original WordPress URLs. URL rewriting (with a guaranteed fallback to
+          the original) arrives in a later phase — nothing on the live site changes yet.
         </p>
+      </div>
+
+      {/* R2-down alert — pause uploads, existing data unaffected */}
+      {config?.r2Status === 'failed' && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.06] px-4 py-3 mb-4 flex gap-3">
+          <AlertTriangle className="size-4 text-amber-300 mt-0.5 flex-shrink-0" />
+          <p className="text-[12px] text-[#e8d9b0] leading-relaxed">
+            <span className="text-amber-300 font-medium">R2 is unreachable — uploads are paused.</span>{' '}
+            {config.r2LastError}{' '}
+            Local optimization still works and existing data is unaffected. Fix the credentials
+            and re-test to resume uploads.
+          </p>
+        </div>
+      )}
+
+      {/* Connect R2 */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Cloud className="size-4" style={{ color: ACCENT }} />
+          <h2 className="text-[13px] font-medium text-[#e8eaed]">Connect Cloudflare R2</h2>
+          {config && <R2StatusChip status={config.r2Status} />}
+        </div>
+        <p className="text-[11px] text-[#9aa0a6] mb-3">
+          One R2 Access Key/Secret is reused across your sites but stored per-site (encrypted at
+          rest). Credentials are write-only — they’re never sent back to the browser.
+        </p>
+
+        {configLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <SecretInput
+                label="Cloudflare Account ID"
+                isSet={!!config?.r2AccountIdSet}
+                value={r2Form.r2AccountId}
+                onChange={(v) => setR2Form((f) => ({ ...f, r2AccountId: v }))}
+                placeholder="e.g. a1b2c3…"
+              />
+              <SecretInput
+                label="Cloudflare API token (R2: Edit)"
+                isSet={!!config?.cfApiTokenSet}
+                value={r2Form.cfApiToken}
+                onChange={(v) => setR2Form((f) => ({ ...f, cfApiToken: v }))}
+              />
+              <SecretInput
+                label="R2 Access Key ID"
+                isSet={!!config?.r2AccessKeyIdSet}
+                value={r2Form.r2AccessKeyId}
+                onChange={(v) => setR2Form((f) => ({ ...f, r2AccessKeyId: v }))}
+              />
+              <SecretInput
+                label="R2 Secret Access Key"
+                isSet={!!config?.r2SecretSet}
+                value={r2Form.r2Secret}
+                onChange={(v) => setR2Form((f) => ({ ...f, r2Secret: v }))}
+              />
+            </div>
+
+            <div className="flex justify-end mt-3">
+              <Button size="sm" onClick={saveR2} disabled={updateR2.isPending}>
+                {updateR2.isPending ? 'Saving…' : 'Save credentials'}
+              </Button>
+            </div>
+
+            <div className="h-px bg-white/8 my-4" />
+
+            <div className="flex items-end justify-between gap-3 flex-wrap">
+              <div className="flex items-end gap-2">
+                <div>
+                  <Label className="text-[#e8eaed]">Bucket</Label>
+                  <Input
+                    value={bucketName}
+                    onChange={(e) => setBucketName(e.target.value)}
+                    placeholder={config?.r2Bucket ?? 'auto from domain'}
+                    className="mt-1 w-56 h-8"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={doCreateBucket}
+                  disabled={!canCreateBucket || createBucket.isPending}
+                  title={canCreateBucket ? '' : 'Save Account ID + CF token first'}
+                >
+                  <Database className="size-4" />
+                  {createBucket.isPending ? 'Creating…' : 'Create / reuse bucket'}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                {config?.r2Bucket && (
+                  <span className="text-[12px] text-[#9aa0a6]">
+                    bucket: <span className="text-[#e8eaed]">{config.r2Bucket}</span>
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  onClick={doTestR2}
+                  disabled={!canTestR2 || testR2.isPending}
+                  title={canTestR2 ? '' : 'Set keys and create a bucket first'}
+                >
+                  {testR2.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                  {testR2.isPending ? 'Testing…' : 'Test connection'}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Settings */}
@@ -389,6 +573,9 @@ export default function SiteOptimizationPage() {
                       <StateBadge state={row.state} stale={row.isStale} />
                       {row.skipReason && (
                         <span className="ml-1 text-[11px] text-[#9aa0a6]">({row.skipReason})</span>
+                      )}
+                      {row.r2Uploaded && (
+                        <span className="ml-1 text-[10px] text-emerald-300/80" title="Uploaded to R2">· R2</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right text-[12px] text-[#9aa0a6]">

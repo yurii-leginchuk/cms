@@ -10,6 +10,9 @@ export type OptimizationState =
 
 export type OptimizationScope = 'all' | 'new_only' | 'force_all'
 
+export type R2Status = 'untested' | 'verified' | 'failed'
+
+/** Redacted config from the API — secrets appear only as *Set booleans. */
 export interface OptimizationConfig {
   id: string
   siteId: string
@@ -17,6 +20,14 @@ export interface OptimizationConfig {
   webpEnabled: boolean
   quality: number
   maxWidth: number | null
+  r2AccountIdSet: boolean
+  r2AccessKeyIdSet: boolean
+  r2SecretSet: boolean
+  cfApiTokenSet: boolean
+  r2Bucket: string | null
+  r2Status: R2Status
+  r2VerifiedAt: string | null
+  r2LastError: string | null
 }
 
 export interface UpdateOptimizationConfig {
@@ -24,6 +35,14 @@ export interface UpdateOptimizationConfig {
   webpEnabled?: boolean
   quality?: number
   maxWidth?: number | null
+}
+
+/** Write-only R2 credentials (only send fields the user actually changed). */
+export interface UpdateR2Config {
+  r2AccountId?: string
+  r2AccessKeyId?: string
+  r2Secret?: string
+  cfApiToken?: string
 }
 
 export interface OptimizationImageRow {
@@ -40,6 +59,8 @@ export interface OptimizationImageRow {
   failureError: string | null
   isStale: boolean
   optimizedAt: string | null
+  r2Uploaded: boolean
+  r2Key: string | null
 }
 
 export interface OptimizationListResult {
@@ -96,6 +117,27 @@ export async function updateOptimizationConfig(
   patch: UpdateOptimizationConfig,
 ): Promise<OptimizationConfig> {
   const { data } = await apiClient.put(`${base(siteId)}/config`, patch)
+  return data.data
+}
+
+export async function updateR2Config(
+  siteId: string,
+  patch: UpdateR2Config,
+): Promise<OptimizationConfig> {
+  const { data } = await apiClient.put(`${base(siteId)}/config/r2`, patch)
+  return data.data
+}
+
+export async function createR2Bucket(
+  siteId: string,
+  name?: string,
+): Promise<{ bucket: string; existed: boolean }> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/r2/create-bucket`, { name })
+  return data.data
+}
+
+export async function testR2Connection(siteId: string): Promise<OptimizationConfig> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/r2/test`)
   return data.data
 }
 

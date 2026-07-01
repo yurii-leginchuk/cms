@@ -12,8 +12,11 @@ import {
 import { OptimizationService } from './optimization.service';
 import { OptimizationConfigService } from './optimization-config.service';
 import { OptimizationStatsService } from './optimization-stats.service';
+import { R2SetupService } from './r2-setup.service';
 import { UpdateOptimizationConfigDto } from './dto/update-optimization-config.dto';
 import { RunOptimizationDto } from './dto/run-optimization.dto';
+import { UpdateR2ConfigDto } from './dto/update-r2-config.dto';
+import { CreateBucketDto } from './dto/create-bucket.dto';
 
 /**
  * Image-optimization endpoints (per site). Responses are wrapped in `{ data }`
@@ -28,12 +31,13 @@ export class OptimizationController {
     private readonly optimizationService: OptimizationService,
     private readonly configService: OptimizationConfigService,
     private readonly statsService: OptimizationStatsService,
+    private readonly r2SetupService: R2SetupService,
   ) {}
 
-  /** Per-site settings (quality / webp / maxWidth / enabled). */
+  /** Per-site settings (redacted — secrets exposed only as isSet booleans). */
   @Get('config')
   getConfig(@Param('siteId') siteId: string) {
-    return this.configService.getOrCreate(siteId);
+    return this.configService.getPublic(siteId);
   }
 
   @Put('config')
@@ -42,6 +46,34 @@ export class OptimizationController {
     @Body() dto: UpdateOptimizationConfigDto,
   ) {
     return this.configService.update(siteId, dto);
+  }
+
+  // ── R2 setup (Phase 2) ──────────────────────────────────────────────────────
+
+  /** Write R2/Cloudflare credentials (secrets write-only; response redacts them). */
+  @Put('config/r2')
+  updateR2Config(
+    @Param('siteId') siteId: string,
+    @Body() dto: UpdateR2ConfigDto,
+  ) {
+    return this.configService.updateR2(siteId, dto);
+  }
+
+  /** Auto-create (or reuse) the site's R2 bucket via Cloudflare. */
+  @Post('config/r2/create-bucket')
+  @HttpCode(HttpStatus.OK)
+  createBucket(
+    @Param('siteId') siteId: string,
+    @Body() dto: CreateBucketDto,
+  ) {
+    return this.r2SetupService.createBucket(siteId, dto.name);
+  }
+
+  /** Real write→head→delete round-trip → sets r2Status verified/failed (+reason). */
+  @Post('config/r2/test')
+  @HttpCode(HttpStatus.OK)
+  testR2(@Param('siteId') siteId: string) {
+    return this.r2SetupService.testConnection(siteId);
   }
 
   /** Honest optimization stats (current-state; single source of truth). */

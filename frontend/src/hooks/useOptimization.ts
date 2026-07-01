@@ -81,6 +81,30 @@ export function useUpdateOptimizationConfig(siteId: string) {
   })
 }
 
+export function useUpdateR2Config(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: (patch: api.UpdateR2Config) => api.updateR2Config(siteId, patch),
+    onSuccess: invalidate,
+  })
+}
+
+export function useCreateR2Bucket(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: (name: string | undefined) => api.createR2Bucket(siteId, name),
+    onSuccess: invalidate,
+  })
+}
+
+export function useTestR2Connection(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.testR2Connection(siteId),
+    onSuccess: invalidate,
+  })
+}
+
 export function useStartOptimizationRun(siteId: string) {
   const invalidate = useInvalidateOptimization(siteId)
   return useMutation({
