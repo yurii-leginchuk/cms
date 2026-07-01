@@ -21,6 +21,7 @@ export interface OptimizationRowLike {
   optimizedBytes: number | null;
   settingsFingerprint: string | null;
   optimizedAt?: Date | null;
+  rewriteLive?: boolean;
 }
 
 export interface OptimizationStatsSummary {
@@ -30,6 +31,8 @@ export interface OptimizationStatsSummary {
   failedCount: number;
   notOptimizedCount: number;
   staleCount: number;
+  /** Images with a verified, published CDN mapping (drives the rewrite badge). */
+  rewriteLiveCount: number;
   /** SUM(originalBytes) over the savings (optimized) set — the % denominator. */
   originalBytesOptimized: number;
   /** SUM(optimizedBytes) over the savings set. */
@@ -51,12 +54,14 @@ export function aggregateStats(
   let skippedCount = 0;
   let failedCount = 0;
   let staleCount = 0;
+  let rewriteLiveCount = 0;
   let originalBytesOptimized = 0;
   let optimizedBytes = 0;
   let bytesSaved = 0;
   let latest: number | null = null;
 
   for (const r of rows) {
+    if (r.rewriteLive) rewriteLiveCount++;
     switch (r.state) {
       case ImageOptimizationState.OPTIMIZED: {
         optimizedCount++;
@@ -98,6 +103,7 @@ export function aggregateStats(
     failedCount,
     notOptimizedCount,
     staleCount,
+    rewriteLiveCount,
     originalBytesOptimized,
     optimizedBytes,
     bytesSaved,

@@ -14,6 +14,9 @@ import { OptimizationService } from './optimization.service';
 import { R2Service } from './r2.service';
 import { CloudflareR2AdminService } from './cloudflare-r2-admin.service';
 import { R2SetupService } from './r2-setup.service';
+import { CloudflareCdnService } from './cloudflare-cdn.service';
+import { CdnPublishService } from './cdn-publish.service';
+import { CdnSetupService } from './cdn-setup.service';
 import { OptimizationController } from './optimization.controller';
 
 /**
@@ -44,6 +47,9 @@ import { OptimizationController } from './optimization.controller';
     R2Service,
     CloudflareR2AdminService,
     R2SetupService,
+    CloudflareCdnService,
+    CdnPublishService,
+    CdnSetupService,
   ],
   exports: [OptimizationService, OptimizationConfigService],
 })

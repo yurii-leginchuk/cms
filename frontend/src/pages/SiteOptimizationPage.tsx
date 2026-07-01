@@ -3,12 +3,14 @@ import { useParams, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Zap, ShieldCheck, Play, RefreshCw, Search, ImageOff, Loader2, X,
-  Cloud, AlertTriangle, CheckCircle2, Database,
+  Cloud, AlertTriangle, CheckCircle2, Database, Globe, Power, Link2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogPortal, DialogOverlay } from '@/components/ui/dialog'
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from '@/components/ui/table'
@@ -19,8 +21,9 @@ import {
   useOptimizationImages, useStartOptimizationRun, useOptimizationRun,
   useCancelOptimizationRun, useReoptimizeImage,
   useUpdateR2Config, useCreateR2Bucket, useTestR2Connection,
+  useProvisionCdn, useCdnStatus, useEnableRewrite, useDisableRewrite,
 } from '@/hooks/useOptimization'
-import type { OptimizationScope, OptimizationState, R2Status } from '@/api/optimization'
+import type { OptimizationScope, OptimizationState, R2Status, DnsStatus } from '@/api/optimization'
 
 const LIMIT = 25
 const ACCENT = '#4e8af4'
@@ -76,6 +79,70 @@ function R2StatusChip({ status }: { status: R2Status }) {
   return <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${s.cls}`}>{s.label}</span>
 }
 
+function DnsStatusChip({ status }: { status: DnsStatus }) {
+  const map: Record<DnsStatus, { label: string; cls: string }> = {
+    none: { label: 'DNS: not set', cls: 'text-[#9aa0a6] bg-white/5' },
+    pending: { label: 'DNS: provisioning', cls: 'text-sky-300 bg-sky-400/10' },
+    active: { label: 'DNS: active', cls: 'text-emerald-300 bg-emerald-400/10' },
+    error: { label: 'DNS: error', cls: 'text-red-300 bg-red-400/10' },
+  }
+  const s = map[status]
+  return <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${s.cls}`}>{s.label}</span>
+}
+
+/** Header rewrite badge: Active / Off / Fallback-only. */
+function RewriteBadge({ enabled, liveCount }: { enabled: boolean; liveCount: number }) {
+  let cls = 'text-[#9aa0a6] bg-white/5'
+  let label = 'Rewrite: Off'
+  if (enabled && liveCount > 0) { cls = 'text-emerald-300 bg-emerald-400/10'; label = 'Rewrite: Active' }
+  else if (enabled && liveCount === 0) { cls = 'text-amber-300 bg-amber-400/10'; label = 'Rewrite: Fallback-only' }
+  return <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${cls}`}>{label}</span>
+}
+
+/** Minimal confirm dialog for the dangerous, hard-to-reverse actions. */
+function ConfirmDialog({
+  open, onOpenChange, title, body, confirmLabel, onConfirm, danger, busy,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  title: string
+  body: React.ReactNode
+  confirmLabel: string
+  onConfirm: () => void
+  danger?: boolean
+  busy?: boolean
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPortal>
+        <DialogOverlay className="bg-black/60 backdrop-blur-sm" />
+        <DialogPrimitive.Popup
+          className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full flex flex-col
+            bg-[#1a1d27] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+          style={{ maxWidth: '520px' }}
+        >
+          <div className="px-6 py-4 border-b border-white/8">
+            <h2 className="text-[15px] font-semibold text-[#e8eaed]">{title}</h2>
+          </div>
+          <div className="px-6 py-4 text-[13px] text-[#c9cdd4] leading-relaxed">{body}</div>
+          <div className="px-6 py-4 border-t border-white/8 flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+            <Button
+              size="sm"
+              variant={danger ? 'destructive' : 'default'}
+              onClick={onConfirm}
+              disabled={busy}
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+              {confirmLabel}
+            </Button>
+          </div>
+        </DialogPrimitive.Popup>
+      </DialogPortal>
+    </Dialog>
+  )
+}
+
 /** Masked secret input: shows "•••• set" placeholder when already stored. */
 function SecretInput({
   label, isSet, value, onChange, placeholder,
@@ -118,10 +185,20 @@ export default function SiteOptimizationPage() {
   const updateR2 = useUpdateR2Config(siteId!)
   const createBucket = useCreateR2Bucket(siteId!)
   const testR2 = useTestR2Connection(siteId!)
+  const provisionCdn = useProvisionCdn(siteId!)
+  const enableRewrite = useEnableRewrite(siteId!)
+  const disableRewrite = useDisableRewrite(siteId!)
 
   // ── R2 credential form (write-only; blank = keep existing) ─────────────────
   const [r2Form, setR2Form] = useState({ r2AccountId: '', r2AccessKeyId: '', r2Secret: '', cfApiToken: '' })
   const [bucketName, setBucketName] = useState('')
+
+  // ── CDN + rewrite state ────────────────────────────────────────────────────
+  const [cdnForm, setCdnForm] = useState({ cdnDomain: '', cfZoneId: '' })
+  const [provisionConfirm, setProvisionConfirm] = useState(false)
+  const [killConfirm, setKillConfirm] = useState(false)
+  const dnsPending = config?.dnsStatus === 'pending'
+  useCdnStatus(siteId!, dnsPending) // polls + invalidates config while provisioning
 
   // ── Run tracking (poll while active, mirroring PageSpeed) ──────────────────
   const [runId, setRunId] = useState<string | null>(null)
@@ -228,6 +305,38 @@ export default function SiteOptimizationPage() {
   const canCreateBucket = !!config && config.r2AccountIdSet && config.cfApiTokenSet
   const canTestR2 = !!config && config.r2AccessKeyIdSet && config.r2SecretSet && !!config.r2Bucket
 
+  const r2Verified = config?.r2Status === 'verified'
+  const dnsActive = config?.dnsStatus === 'active'
+  const canProvision = r2Verified && cdnForm.cdnDomain.trim() !== '' && cdnForm.cfZoneId.trim() !== ''
+  const canEnableRewrite = r2Verified && dnsActive
+
+  const doProvision = () => {
+    setProvisionConfirm(false)
+    provisionCdn.mutate(
+      { cdnDomain: cdnForm.cdnDomain.trim(), cfZoneId: cdnForm.cfZoneId.trim() },
+      {
+        onSuccess: () => toast.success('CDN domain binding started — Cloudflare is provisioning DNS + TLS.'),
+        onError: (e) => toast.error((e as Error).message),
+      },
+    )
+  }
+
+  const doEnableRewrite = () => {
+    enableRewrite.mutate(undefined, {
+      onSuccess: ({ publish }) =>
+        toast.success(`Rewriting enabled — ${publish.verified} verified image(s) now served from the CDN.`),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  }
+
+  const doDisableRewrite = () => {
+    setKillConfirm(false)
+    disableRewrite.mutate(undefined, {
+      onSuccess: () => toast.success('Kill-switch on — all images now serve from their original WordPress URLs. Nothing was deleted.'),
+      onError: (e) => toast.error((e as Error).message),
+    })
+  }
+
   const progressPct = run && run.imagesConsidered > 0
     ? Math.round((run.processed / run.imagesConsidered) * 100)
     : 0
@@ -245,7 +354,10 @@ export default function SiteOptimizationPage() {
             Compress and convert the media library to WebP. {site?.name}
           </p>
         </div>
-        {config && <R2StatusChip status={config.r2Status} />}
+        <div className="flex items-center gap-2">
+          {config && <RewriteBadge enabled={config.rewriteEnabled} liveCount={stats?.rewriteLiveCount ?? 0} />}
+          {config && <R2StatusChip status={config.r2Status} />}
+        </div>
       </div>
 
       {/* Safety card — persistent trust surface */}
@@ -365,6 +477,105 @@ export default function SiteOptimizationPage() {
             </div>
           </>
         )}
+      </div>
+
+      {/* CDN domain */}
+      <div className={`rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-5 ${!r2Verified ? 'opacity-60' : ''}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <Globe className="size-4" style={{ color: ACCENT }} />
+          <h2 className="text-[13px] font-medium text-[#e8eaed]">CDN custom domain</h2>
+          {config && <DnsStatusChip status={config.dnsStatus} />}
+        </div>
+        <p className="text-[11px] text-[#9aa0a6] mb-3">
+          {r2Verified
+            ? 'Bind a domain (e.g. cdn.yoursite.com) to the R2 bucket. Cloudflare auto-provisions the DNS record + TLS — do not add a CNAME yourself.'
+            : 'Verify the R2 connection above before provisioning a CDN domain.'}
+        </p>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label className="text-[#e8eaed]">CDN domain</Label>
+            <Input
+              value={cdnForm.cdnDomain}
+              onChange={(e) => setCdnForm((f) => ({ ...f, cdnDomain: e.target.value }))}
+              placeholder={config?.cdnDomain ?? 'cdn.yoursite.com'}
+              disabled={!r2Verified}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-[#e8eaed]">Cloudflare Zone ID</Label>
+            <Input
+              value={cdnForm.cfZoneId}
+              onChange={(e) => setCdnForm((f) => ({ ...f, cfZoneId: e.target.value }))}
+              placeholder={config?.cfZoneId ?? 'zone id for that domain'}
+              disabled={!r2Verified}
+              className="mt-1"
+            />
+          </div>
+        </div>
+
+        {config?.dnsStatus === 'error' && config.dnsError && (
+          <p className="text-[12px] text-red-300 mt-2">{config.dnsError}</p>
+        )}
+
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-[11px] text-[#9aa0a6]">
+            Prefer manual? Add a proxied CNAME for the domain in Cloudflare, then poll status.
+          </p>
+          <div className="flex items-center gap-2">
+            {dnsPending && (
+              <span className="text-[12px] text-sky-300 inline-flex items-center gap-1">
+                <Loader2 className="size-3.5 animate-spin" /> provisioning…
+              </span>
+            )}
+            <Button
+              size="sm"
+              onClick={() => setProvisionConfirm(true)}
+              disabled={!canProvision || provisionCdn.isPending}
+            >
+              <Link2 className="size-4" />
+              {config?.cdnDomain ? 'Re-bind domain' : 'Create record'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Enable rewriting */}
+      <div className={`rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-5 ${!canEnableRewrite && !config?.rewriteEnabled ? 'opacity-60' : ''}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <Power className="size-4" style={{ color: ACCENT }} />
+          <h2 className="text-[13px] font-medium text-[#e8eaed]">Live URL rewriting</h2>
+          {config && <RewriteBadge enabled={config.rewriteEnabled} liveCount={stats?.rewriteLiveCount ?? 0} />}
+        </div>
+        <p className="text-[11px] text-[#9aa0a6] mb-3">
+          {canEnableRewrite || config?.rewriteEnabled
+            ? 'The plugin rewrites an image URL ONLY when the CMS has a verified CDN copy for it — every other image keeps serving its original WordPress URL. The kill-switch reverts instantly and deletes nothing.'
+            : 'Reachable once R2 is verified and the CDN domain is active.'}
+        </p>
+
+        <div className="flex items-center gap-2">
+          {!config?.rewriteEnabled ? (
+            <Button size="sm" onClick={doEnableRewrite} disabled={!canEnableRewrite || enableRewrite.isPending}>
+              {enableRewrite.isPending ? <Loader2 className="size-4 animate-spin" /> : <Power className="size-4" />}
+              Enable rewriting
+            </Button>
+          ) : (
+            <>
+              <Button size="sm" variant="outline" onClick={doEnableRewrite} disabled={enableRewrite.isPending}>
+                <RefreshCw className="size-4" /> Re-publish verified maps
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => setKillConfirm(true)} disabled={disableRewrite.isPending}>
+                <Power className="size-4" /> Kill-switch (disable)
+              </Button>
+            </>
+          )}
+          {config?.rewriteEnabled && (stats?.rewriteLiveCount ?? 0) === 0 && (
+            <span className="text-[12px] text-amber-300">
+              Enabled but 0 verified mappings — everything is still serving originals.
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Settings */}
@@ -577,6 +788,9 @@ export default function SiteOptimizationPage() {
                       {row.r2Uploaded && (
                         <span className="ml-1 text-[10px] text-emerald-300/80" title="Uploaded to R2">· R2</span>
                       )}
+                      {row.rewriteLive && (
+                        <span className="ml-1 text-[10px] text-emerald-300" title="Served from CDN (verified)">· CDN</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right text-[12px] text-[#9aa0a6]">
                       {row.originalBytes !== null
@@ -613,6 +827,46 @@ export default function SiteOptimizationPage() {
           </>
         )}
       </div>
+
+      {/* Confirm: provision CDN (external, slow to reverse) */}
+      <ConfirmDialog
+        open={provisionConfirm}
+        onOpenChange={setProvisionConfirm}
+        title="Create the CDN domain record?"
+        confirmLabel="Create record"
+        onConfirm={doProvision}
+        busy={provisionCdn.isPending}
+        body={
+          <div className="space-y-2">
+            <p>Cloudflare will bind this domain to your R2 bucket and auto-provision a proxied DNS record + TLS certificate:</p>
+            <div className="rounded-lg bg-white/[0.03] border border-white/10 px-3 py-2 font-mono text-[12px] text-[#e8eaed]">
+              CNAME {cdnForm.cdnDomain || 'cdn.yoursite.com'} → (R2 bucket {config?.r2Bucket ?? '—'})
+            </div>
+            <p className="text-amber-300/90 text-[12px]">
+              This is an external change and can be slow to reverse. Nothing on your live site
+              is affected until you separately enable rewriting.
+            </p>
+          </div>
+        }
+      />
+
+      {/* Confirm: kill-switch */}
+      <ConfirmDialog
+        open={killConfirm}
+        onOpenChange={setKillConfirm}
+        title="Turn off URL rewriting?"
+        confirmLabel="Disable rewriting"
+        danger
+        onConfirm={doDisableRewrite}
+        busy={disableRewrite.isPending}
+        body={
+          <p>
+            This disables optimization rewriting in the CMS and tells the plugin to stop
+            rewriting URLs. Every image immediately serves from its original WordPress URL.
+            <span className="text-emerald-300"> No files are deleted</span> — you can re-enable anytime.
+          </p>
+        }
+      />
     </div>
   )
 }

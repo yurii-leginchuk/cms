@@ -26,9 +26,12 @@ import { bigintTransformer } from './numeric.transformer';
  * `settingsFingerprint` against the config's current fingerprint, so a settings
  * change can never leave a frozen-stale row behind (analyst P0-3).
  *
- * PHASE 2 (this file) adds r2Key + r2Uploaded — the upload facts, kept separate
- * from "optimized" (local encode success). PHASE 3 will ADD rewriteLive /
- * rewriteVerifiedAt (the live-serving facts).
+ * PHASE 2 adds r2Key + r2Uploaded — the upload facts, kept separate from
+ * "optimized" (local encode success). PHASE 3 (this file) adds rewriteLive /
+ * rewriteVerifiedAt — the live-serving facts: an image is rewriteLive ONLY once
+ * the CMS has HEAD-verified its CDN URL returns 200. The plugin rewrites a URL
+ * ONLY for a published, verified mapping — so a non-verified image always stays
+ * on its original WordPress URL (the "images never disappear" guarantee).
  */
 export enum ImageOptimizationState {
   NOT_OPTIMIZED = 'not_optimized',
@@ -121,6 +124,14 @@ export class ImageOptimization {
   /** True once the optimized artifact is uploaded AND HEAD-verified in R2. */
   @Column({ type: 'boolean', default: false })
   r2Uploaded: boolean;
+
+  // ── Live-serving facts (Phase 3) ────────────────────────────────────────────
+  /** True once the CDN URL HEAD-verified 200 AND the mapping was published to WP. */
+  @Column({ type: 'boolean', default: false })
+  rewriteLive: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  rewriteVerifiedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -508,6 +508,7 @@ export class OptimizationService {
         optimizedAt: o?.optimizedAt ?? null,
         r2Uploaded: o?.r2Uploaded ?? false,
         r2Key: o?.r2Key ?? null,
+        rewriteLive: o?.rewriteLive ?? false,
       };
     });
 

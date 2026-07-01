@@ -22,13 +22,21 @@ import { Site } from '../sites/site.entity';
  * booleans). `r2AccountId` / `r2AccessKeyId` are not decryptable secrets but are
  * still redacted from API responses (write-only in the UI).
  *
- * PHASE 3 will ADD (later migration): cdnDomain / cfZoneId / dnsStatus /
- * rewriteEnabled — the live URL-rewrite surface. Deliberately OUT of Phase 2.
+ * PHASE 3 (this file) adds the CDN custom-domain + DNS status + the rewrite
+ * kill-switch. Rewrite cannot be enabled unless R2 is verified AND DNS is active
+ * (enforced server-side).
  */
 export enum R2Status {
   UNTESTED = 'untested',
   VERIFIED = 'verified',
   FAILED = 'failed',
+}
+
+export enum DnsStatus {
+  NONE = 'none',
+  PENDING = 'pending',
+  ACTIVE = 'active',
+  ERROR = 'error',
 }
 
 @Entity('site_optimization_config')
@@ -90,6 +98,30 @@ export class SiteOptimizationConfig {
   /** Last human-readable failure reason (scrubbed — never a raw secret/body). */
   @Column({ type: 'varchar', length: 255, nullable: true })
   r2LastError: string | null;
+
+  // ── CDN custom domain + live rewrite (Phase 3) ─────────────────────────────
+
+  /** Custom domain bound to the bucket, e.g. cdn.client.com. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  cdnDomain: string | null;
+
+  /** Cloudflare zone id that owns cdnDomain (same account as the bucket). */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  cfZoneId: string | null;
+
+  /** Provisioning state of the custom domain (Cloudflare auto-provisions DNS+TLS). */
+  @Column({ type: 'enum', enum: DnsStatus, default: DnsStatus.NONE })
+  dnsStatus: DnsStatus;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  dnsError: string | null;
+
+  /**
+   * The LIVE kill-switch. Cannot be set true unless r2Status=verified AND
+   * dnsStatus=active (enforced server-side). false = plugin serves originals.
+   */
+  @Column({ type: 'boolean', default: false })
+  rewriteEnabled: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

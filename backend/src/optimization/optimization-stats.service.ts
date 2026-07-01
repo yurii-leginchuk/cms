@@ -43,6 +43,7 @@ export class OptimizationStatsService {
           'optimizedBytes',
           'settingsFingerprint',
           'optimizedAt',
+          'rewriteLive',
         ],
       }),
       this.imageRepo.count({ where: { siteId } }),

@@ -105,6 +105,46 @@ export function useTestR2Connection(siteId: string) {
   })
 }
 
+export function useProvisionCdn(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: (body: { cdnDomain: string; cfZoneId: string }) => api.provisionCdn(siteId, body),
+    onSuccess: invalidate,
+  })
+}
+
+/** Poll the CDN provisioning status while it's pending; syncs into the config cache. */
+export function useCdnStatus(siteId: string, active: boolean) {
+  const qc = useQueryClient()
+  return useQuery({
+    queryKey: ['optimization-cdn-status', siteId],
+    queryFn: async () => {
+      const c = await api.getCdnStatus(siteId)
+      qc.setQueryData(['optimization-config', siteId], c)
+      return c
+    },
+    enabled: !!siteId && active,
+    refetchInterval: active ? 5000 : false,
+    staleTime: 0,
+  })
+}
+
+export function useEnableRewrite(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.enableRewrite(siteId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDisableRewrite(siteId: string) {
+  const invalidate = useInvalidateOptimization(siteId)
+  return useMutation({
+    mutationFn: () => api.disableRewrite(siteId),
+    onSuccess: invalidate,
+  })
+}
+
 export function useStartOptimizationRun(siteId: string) {
   const invalidate = useInvalidateOptimization(siteId)
   return useMutation({

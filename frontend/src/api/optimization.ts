@@ -11,6 +11,7 @@ export type OptimizationState =
 export type OptimizationScope = 'all' | 'new_only' | 'force_all'
 
 export type R2Status = 'untested' | 'verified' | 'failed'
+export type DnsStatus = 'none' | 'pending' | 'active' | 'error'
 
 /** Redacted config from the API — secrets appear only as *Set booleans. */
 export interface OptimizationConfig {
@@ -28,6 +29,11 @@ export interface OptimizationConfig {
   r2Status: R2Status
   r2VerifiedAt: string | null
   r2LastError: string | null
+  cdnDomain: string | null
+  cfZoneId: string | null
+  dnsStatus: DnsStatus
+  dnsError: string | null
+  rewriteEnabled: boolean
 }
 
 export interface UpdateOptimizationConfig {
@@ -61,6 +67,7 @@ export interface OptimizationImageRow {
   optimizedAt: string | null
   r2Uploaded: boolean
   r2Key: string | null
+  rewriteLive: boolean
 }
 
 export interface OptimizationListResult {
@@ -75,6 +82,7 @@ export interface OptimizationStats {
   failedCount: number
   notOptimizedCount: number
   staleCount: number
+  rewriteLiveCount: number
   originalBytesOptimized: number
   optimizedBytes: number
   bytesSaved: number
@@ -138,6 +146,38 @@ export async function createR2Bucket(
 
 export async function testR2Connection(siteId: string): Promise<OptimizationConfig> {
   const { data } = await apiClient.post(`${base(siteId)}/config/r2/test`)
+  return data.data
+}
+
+export interface PublishResult {
+  eligible: number
+  verified: number
+  published: number
+  failedHead: number
+}
+
+export async function provisionCdn(
+  siteId: string,
+  body: { cdnDomain: string; cfZoneId: string },
+): Promise<OptimizationConfig> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/cdn/provision`, body)
+  return data.data
+}
+
+export async function getCdnStatus(siteId: string): Promise<OptimizationConfig> {
+  const { data } = await apiClient.get(`${base(siteId)}/config/cdn/status`)
+  return data.data
+}
+
+export async function enableRewrite(
+  siteId: string,
+): Promise<{ config: OptimizationConfig; publish: PublishResult }> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/rewrite/enable`)
+  return data.data
+}
+
+export async function disableRewrite(siteId: string): Promise<OptimizationConfig> {
+  const { data } = await apiClient.post(`${base(siteId)}/config/rewrite/disable`)
   return data.data
 }
 

@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Site } from '../sites/site.entity';
 import { CryptoService } from '../common/crypto/crypto.service';
-import { SiteOptimizationConfig, R2Status } from './site-optimization-config.entity';
+import {
+  SiteOptimizationConfig,
+  R2Status,
+  DnsStatus,
+} from './site-optimization-config.entity';
 import { UpdateOptimizationConfigDto } from './dto/update-optimization-config.dto';
 import { UpdateR2ConfigDto } from './dto/update-r2-config.dto';
 import { R2Credentials } from './r2-helpers';
@@ -28,6 +32,12 @@ export interface OptimizationConfigPublic {
   r2Status: R2Status;
   r2VerifiedAt: Date | null;
   r2LastError: string | null;
+  // CDN + rewrite (Phase 3)
+  cdnDomain: string | null;
+  cfZoneId: string | null;
+  dnsStatus: DnsStatus;
+  dnsError: string | null;
+  rewriteEnabled: boolean;
 }
 
 @Injectable()
@@ -67,6 +77,11 @@ export class OptimizationConfigService {
       r2Status: c.r2Status,
       r2VerifiedAt: c.r2VerifiedAt,
       r2LastError: c.r2LastError,
+      cdnDomain: c.cdnDomain,
+      cfZoneId: c.cfZoneId,
+      dnsStatus: c.dnsStatus,
+      dnsError: c.dnsError,
+      rewriteEnabled: c.rewriteEnabled,
     };
   }
 

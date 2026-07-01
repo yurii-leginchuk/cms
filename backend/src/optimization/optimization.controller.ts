@@ -13,10 +13,12 @@ import { OptimizationService } from './optimization.service';
 import { OptimizationConfigService } from './optimization-config.service';
 import { OptimizationStatsService } from './optimization-stats.service';
 import { R2SetupService } from './r2-setup.service';
+import { CdnSetupService } from './cdn-setup.service';
 import { UpdateOptimizationConfigDto } from './dto/update-optimization-config.dto';
 import { RunOptimizationDto } from './dto/run-optimization.dto';
 import { UpdateR2ConfigDto } from './dto/update-r2-config.dto';
 import { CreateBucketDto } from './dto/create-bucket.dto';
+import { ProvisionCdnDto } from './dto/provision-cdn.dto';
 
 /**
  * Image-optimization endpoints (per site). Responses are wrapped in `{ data }`
@@ -32,6 +34,7 @@ export class OptimizationController {
     private readonly configService: OptimizationConfigService,
     private readonly statsService: OptimizationStatsService,
     private readonly r2SetupService: R2SetupService,
+    private readonly cdnSetupService: CdnSetupService,
   ) {}
 
   /** Per-site settings (redacted — secrets exposed only as isSet booleans). */
@@ -74,6 +77,38 @@ export class OptimizationController {
   @HttpCode(HttpStatus.OK)
   testR2(@Param('siteId') siteId: string) {
     return this.r2SetupService.testConnection(siteId);
+  }
+
+  // ── CDN custom domain + live rewrite (Phase 3) ──────────────────────────────
+
+  /** Bind the CDN custom domain (gated: requires R2 verified). */
+  @Post('config/cdn/provision')
+  @HttpCode(HttpStatus.OK)
+  provisionCdn(
+    @Param('siteId') siteId: string,
+    @Body() dto: ProvisionCdnDto,
+  ) {
+    return this.cdnSetupService.provision(siteId, dto);
+  }
+
+  /** Poll the custom-domain provisioning status (pending → active / error). */
+  @Get('config/cdn/status')
+  cdnStatus(@Param('siteId') siteId: string) {
+    return this.cdnSetupService.refreshStatus(siteId);
+  }
+
+  /** Enable live rewriting. 409 unless R2 verified AND DNS active (gate #1). */
+  @Post('config/rewrite/enable')
+  @HttpCode(HttpStatus.OK)
+  enableRewrite(@Param('siteId') siteId: string) {
+    return this.cdnSetupService.enableRewrite(siteId);
+  }
+
+  /** Kill-switch: stop rewriting everywhere (deletes nothing). */
+  @Post('config/rewrite/disable')
+  @HttpCode(HttpStatus.OK)
+  disableRewrite(@Param('siteId') siteId: string) {
+    return this.cdnSetupService.disableRewrite(siteId);
   }
 
   /** Honest optimization stats (current-state; single source of truth). */
