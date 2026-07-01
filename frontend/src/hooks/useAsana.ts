@@ -201,6 +201,26 @@ export function useCreateAsanaSubtask(siteId: string) {
   })
 }
 
+export function useAsanaTaskScope(siteId: string | undefined, taskGid: string | undefined) {
+  return useQuery({
+    queryKey: ['asana-task-scope', siteId, taskGid],
+    queryFn: () => asanaApi.getScope(siteId!, taskGid!),
+    enabled: !!siteId && !!taskGid,
+  })
+}
+
+export function useSetAsanaTaskScope(siteId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; scope: 'sitewide' | 'pages' | null; pageIds: string[] }) =>
+      asanaApi.setScope(siteId, vars.taskGid, vars.scope, vars.pageIds),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['asana-task-scope', siteId, vars.taskGid] })
+      qc.invalidateQueries({ queryKey: ['asana-task', siteId, vars.taskGid] })
+    },
+  })
+}
+
 export function useLinkAsanaTask(siteId: string) {
   const invalidate = useTaskInvalidator(siteId)
   return useMutation({

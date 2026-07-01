@@ -41,8 +41,10 @@ export class AsanaSyncService {
     const token = await this.connection.getToken();
     try {
       const raw = await this.api.getTask(token, task.taskGid);
+      const now = new Date();
       Object.assign(task, mapTaskToMirror(raw, task.siteId, task.projectGid), {
-        lastSyncedAt: new Date(),
+        completedAt: completionInstant(raw, task.completedAt, now),
+        lastSyncedAt: now,
       });
       await this.taskRepo.save(task);
       return 'synced';
@@ -98,12 +100,29 @@ export class AsanaSyncService {
     const fields = mapTaskToMirror(raw, siteId, projectGid);
     const now = new Date();
     const existing = await this.taskRepo.findOne({ where: { taskGid: raw.gid } });
+    const completedAt = completionInstant(raw, existing?.completedAt ?? null, now);
     if (existing) {
-      Object.assign(existing, fields, { lastSyncedAt: now });
+      Object.assign(existing, fields, { completedAt, lastSyncedAt: now });
       return this.taskRepo.save(existing);
     }
     return this.taskRepo.save(
-      this.taskRepo.create({ ...fields, origin, lastSyncedAt: now }),
+      this.taskRepo.create({ ...fields, origin, completedAt, lastSyncedAt: now }),
     );
   }
+}
+
+/**
+ * The task's completion instant, frozen at completion (Asana's `completed_at`
+ * clock). Cleared on re-open so the impact marker disappears until re-completed;
+ * on re-complete it takes the new instant. Never sync/modified time.
+ */
+function completionInstant(
+  raw: AsanaTaskRaw,
+  prev: Date | null,
+  now: Date,
+): Date | null {
+  if (!raw.completed) return null;
+  if (raw.completed_at) return new Date(raw.completed_at);
+  // Completed but Asana didn't return the timestamp: keep the prior one, else now.
+  return prev ?? now;
 }

@@ -177,6 +177,35 @@ export function registerAsanaTools(server: McpServer, client: CmsClient) {
       }),
   );
 
+  // ── Impact scope (direct — CMS-local metadata, no Asana write) ──────────────
+
+  server.registerTool(
+    'asana_set_scope',
+    {
+      title: 'Set a task\'s Optimization-Impact scope',
+      description:
+        'Set which pages a task\'s completion is credited to on the Impact timeline: "sitewide" (global timeline only) or "pages" with a pageIds list (those pages + global). CMS-local metadata (does not modify Asana), so it runs directly — no approval. When the task completes, a marker appears on the Impact timeline per this scope; the marker date is frozen at completion.',
+      inputSchema: {
+        siteId: siteIdField,
+        taskGid: taskGidField,
+        scope: z.enum(['sitewide', 'pages']).describe('sitewide = global only; pages = the given pageIds + global.'),
+        pageIds: z.array(z.string()).optional().describe('Required for scope "pages": CMS page ids (use list_pages).'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false },
+    },
+    async (args) =>
+      guard(async () => {
+        const res = (await client.put(`/sites/${site(args.siteId)}/asana/tasks/${args.taskGid}/scope`, {
+          scope: args.scope,
+          pageIds: args.pageIds ?? [],
+        })) as any;
+        return ok(
+          `Scope set to ${res.scope}${res.scope === 'pages' ? ` (${res.pageIds.length} page(s))` : ''}. Completing the task will mark it on the Impact timeline.`,
+          { scope: res },
+        );
+      }),
+  );
+
   // ── Writes (GATED — stage a proposal) ───────────────────────────────────────
 
   server.registerTool(

@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { MetaHistory } from '../pages/meta-history.entity';
 import { Page } from '../pages/page.entity';
 import { SchemaHistory } from '../schema/schema-history.entity';
 import { OptimizationEffect } from '../optimization-effects/optimization-effect.entity';
 import { AltPublishEvent } from './alt-publish-event.entity';
 import { ImpactAnnotation } from './impact-annotation.entity';
+import { AsanaTask } from '../asana/asana-task.entity';
+import { AsanaTaskPage } from '../asana/asana-task-page.entity';
 import { ChangeEvent, ChangeEventCategory } from './change-event';
 import { toGscDay, diffDays } from './gsc-date';
 import { CONFOUND_WINDOW_DAYS, GROUP_WINDOW_DAYS } from './impact.constants';
@@ -43,6 +45,8 @@ export class ChangeEventsService {
     @InjectRepository(OptimizationEffect) private readonly effectRepo: Repository<OptimizationEffect>,
     @InjectRepository(AltPublishEvent) private readonly altRepo: Repository<AltPublishEvent>,
     @InjectRepository(ImpactAnnotation) private readonly annotationRepo: Repository<ImpactAnnotation>,
+    @InjectRepository(AsanaTask) private readonly taskRepo: Repository<AsanaTask>,
+    @InjectRepository(AsanaTaskPage) private readonly taskPageRepo: Repository<AsanaTaskPage>,
   ) {}
 
   /**
@@ -63,7 +67,7 @@ export class ChangeEventsService {
     const pageIds = pages.map((p) => p.id);
     if (pageIds.length === 0 && !pageId) return [];
 
-    const [metaRows, schemaRows, effects, altRows, annotationRows] = await Promise.all([
+    const [metaRows, schemaRows, effects, altRows, annotationRows, taskRows, taskPageRows] = await Promise.all([
       pageIds.length
         ? this.metaRepo.find({ where: { pageId: In(pageIds) }, order: { createdAt: 'DESC' }, take: 1000 })
         : Promise.resolve([]),
@@ -75,6 +79,8 @@ export class ChangeEventsService {
       this.effectRepo.find({ where: pageId ? { siteId, pageId } : { siteId }, take: 1000 }),
       this.altRepo.find({ where: { siteId }, order: { publishedAt: 'DESC' }, take: 500 }),
       this.annotationRepo.find({ where: { siteId }, order: { date: 'DESC' }, take: 500 }),
+      this.taskRepo.find({ where: { siteId, completed: true, parentTaskGid: IsNull() }, take: 1000 }),
+      this.taskPageRepo.find({ where: { siteId }, take: 5000 }),
     ]);
 
     const events: ChangeEvent[] = [];
@@ -281,6 +287,61 @@ export class ChangeEventsService {
         confoundedWith: 0,
         taskUrl: a.link ?? null,
       });
+    }
+
+    // ── Completed Asana tasks folded in (workflow proxy — measurable:false) ────
+    // Marker date = the FROZEN completion instant (Asana's clock). `sitewide` →
+    // global only (and confounds every page); `pages` → each scoped page + a
+    // global aggregate. A re-opened task has completedAt cleared → no marker.
+    const pagesByTask = new Map<string, string[]>();
+    for (const tp of taskPageRows) {
+      (pagesByTask.get(tp.taskGid) ?? pagesByTask.set(tp.taskGid, []).get(tp.taskGid)!).push(tp.pageId);
+    }
+    for (const t of taskRows) {
+      if (!t.completedAt) continue;
+      const scopedPages = t.scope === 'pages' ? pagesByTask.get(t.taskGid) ?? [] : [];
+      const day = toGscDay(t.completedAt);
+      const ts = new Date(t.completedAt).toISOString();
+      const base = {
+        type: 'task' as const,
+        category: 'task' as const,
+        clusterId: '',
+        subtype: 'task',
+        ts,
+        day,
+        precision: 'timestamp' as const,
+        before: null,
+        after: null,
+        measurable: false,
+        effectStatus: null,
+        effectId: null,
+        confoundedWith: 0,
+        taskUrl: t.permalinkUrl,
+      };
+      if (pageId) {
+        // Per-page view: only `pages`-scoped tasks that include this page.
+        if (t.scope === 'pages' && scopedPages.includes(pageId)) {
+          events.push({
+            ...base,
+            id: `task:${t.taskGid}`,
+            pageId,
+            pageUrl: urlById.get(pageId) ?? '',
+            summary: `Task completed: ${t.name}`,
+          });
+        }
+      } else {
+        // Global view: one marker per completed task. Sitewide confounds all pages.
+        events.push({
+          ...base,
+          id: `task:${t.taskGid}`,
+          pageId: null,
+          pageUrl: '',
+          summary:
+            `Task completed: ${t.name}` +
+            (t.scope === 'pages' && scopedPages.length ? ` (${scopedPages.length} page${scopedPages.length === 1 ? '' : 's'})` : ''),
+          ...(t.scope === 'sitewide' ? { scope: 'sitewide' as const } : {}),
+        });
+      }
     }
 
     this.markConfounders(events);

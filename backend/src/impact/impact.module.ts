@@ -4,6 +4,8 @@ import { GscModule } from '../gsc/gsc.module';
 import { GscDaily } from './gsc-daily.entity';
 import { ImpactAnnotation } from './impact-annotation.entity';
 import { AltPublishEvent } from './alt-publish-event.entity';
+import { AsanaTask } from '../asana/asana-task.entity';
+import { AsanaTaskPage } from '../asana/asana-task-page.entity';
 import { WatchedKeyword } from './watched-keyword.entity';
 import { KeywordDaily } from './keyword-daily.entity';
 import { MetaHistory } from '../pages/meta-history.entity';
@@ -22,7 +24,7 @@ import { ImpactController } from './impact.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      GscDaily, ImpactAnnotation, AltPublishEvent, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, OptimizationEffect, BrandCard,
+      GscDaily, ImpactAnnotation, AltPublishEvent, AsanaTask, AsanaTaskPage, WatchedKeyword, KeywordDaily, MetaHistory, Page, SchemaHistory, OptimizationEffect, BrandCard,
     ]),
     GscModule,
   ],

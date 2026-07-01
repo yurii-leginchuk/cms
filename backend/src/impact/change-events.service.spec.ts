@@ -9,7 +9,7 @@ describe('ChangeEventsService', () => {
   const at = new Date('2026-05-10T18:00:00Z'); // LA: 2026-05-10
 
   function build(overrides: {
-    pages?: any[]; meta?: any[]; schema?: any[]; effects?: any[]; alt?: any[]; annotations?: any[];
+    pages?: any[]; meta?: any[]; schema?: any[]; effects?: any[]; alt?: any[]; annotations?: any[]; tasks?: any[]; taskPages?: any[];
   } = {}) {
     const pages = repo(overrides.pages ?? [
       { id: 'p1', url: 'https://x.com/a' },
@@ -28,7 +28,9 @@ describe('ChangeEventsService', () => {
     ]);
     const alt = repo(overrides.alt ?? []);
     const annotations = repo(overrides.annotations ?? []);
-    return new ChangeEventsService(meta, pages, schema, effects, alt, annotations);
+    const tasks = repo(overrides.tasks ?? []);
+    const taskPages = repo(overrides.taskPages ?? []);
+    return new ChangeEventsService(meta, pages, schema, effects, alt, annotations, tasks, taskPages);
   }
 
   it('merges meta, technical and schema sources into a typed feed', async () => {
@@ -115,6 +117,35 @@ describe('ChangeEventsService', () => {
     expect(events[0].pageId).toBeNull();
     expect(events[0].measurable).toBe(false);
     expect(events[0].summary).toContain('2 pages');
+  });
+
+  it('folds completed Asana tasks: sitewide → global-only; pages → each page + global', async () => {
+    const completedAt = new Date('2026-05-20T18:00:00Z');
+    const svc = build({
+      pages: [{ id: 'p1', url: 'https://x.com/a' }, { id: 'p2', url: 'https://x.com/b' }],
+      meta: [], schema: [], effects: [], alt: [], annotations: [],
+      tasks: [
+        { taskGid: 't-site', siteId: 'site1', name: 'Sitewide fix', completed: true, completedAt, scope: 'sitewide', permalinkUrl: 'https://app.asana.com/t/1', parentTaskGid: null },
+        { taskGid: 't-page', siteId: 'site1', name: 'Fix /a', completed: true, completedAt, scope: 'pages', permalinkUrl: 'https://app.asana.com/t/2', parentTaskGid: null },
+      ],
+      taskPages: [{ taskGid: 't-page', siteId: 'site1', pageId: 'p1' }],
+    });
+    // Global: both tasks as one marker each, pageId null.
+    const global = await svc.listEvents('site1');
+    const gt = global.filter((e) => e.category === 'task');
+    expect(gt).toHaveLength(2);
+    const site = gt.find((e) => e.id === 'task:t-site')!;
+    expect(site.pageId).toBeNull();
+    expect(site.scope).toBe('sitewide');
+    expect(site.measurable).toBe(false);
+    expect(site.taskUrl).toBe('https://app.asana.com/t/1');
+    // Page p1: only the pages-scoped task that includes p1.
+    const page1 = await svc.listEvents('site1', 'p1');
+    const p1t = page1.filter((e) => e.category === 'task').map((e) => e.id);
+    expect(p1t).toEqual(['task:t-page']);
+    // Page p2: neither (sitewide is global-only; t-page not scoped to p2).
+    const page2 = await svc.listEvents('site1', 'p2');
+    expect(page2.filter((e) => e.category === 'task')).toHaveLength(0);
   });
 
   it('folds manual annotations into the feed as category:manual (sitewide + page scoping)', async () => {

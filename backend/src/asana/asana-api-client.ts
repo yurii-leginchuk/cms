@@ -17,7 +17,7 @@ const TIMEOUT_MS = 20_000;
 
 /** opt_fields requested for a task, so section/assignee/subtasks come back inline. */
 const TASK_FIELDS =
-  'name,notes,completed,due_on,permalink_url,num_subtasks,modified_at,' +
+  'name,notes,completed,completed_at,due_on,permalink_url,num_subtasks,modified_at,' +
   'assignee.name,parent.gid,memberships.project.gid,memberships.section.name';
 
 export interface AsanaUser {

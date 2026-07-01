@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { AsanaTask } from './asana-task.entity';
+import { AsanaTaskPage } from './asana-task-page.entity';
 import { AsanaConnectionService } from './asana-connection.service';
 import { AsanaProjectService } from './asana-project.service';
 import { AsanaSyncService } from './asana-sync.service';
@@ -41,6 +42,8 @@ export class AsanaTaskService {
   constructor(
     @InjectRepository(AsanaTask)
     private readonly taskRepo: Repository<AsanaTask>,
+    @InjectRepository(AsanaTaskPage)
+    private readonly taskPageRepo: Repository<AsanaTaskPage>,
     private readonly connection: AsanaConnectionService,
     private readonly projects: AsanaProjectService,
     private readonly sync: AsanaSyncService,
@@ -267,5 +270,38 @@ export class AsanaTaskService {
     row.linkedEntityType = dto.entityType;
     row.linkedEntityId = dto.entityId;
     return this.taskRepo.save(row);
+  }
+
+  /**
+   * Set a task's Impact scope — CMS-local metadata (no Asana write), settable any
+   * time via UI or MCP. `sitewide` → global timeline only; `pages` → the given
+   * pages (+ global). Rewrites the asana_task_page join wholesale. The completion
+   * marker's DATE stays frozen (completedAt); scope governs where it's credited.
+   */
+  async setScope(
+    siteId: string,
+    taskGid: string,
+    dto: { scope: 'sitewide' | 'pages' | null; pageIds?: string[] },
+  ): Promise<{ scope: 'sitewide' | 'pages' | null; pageIds: string[] }> {
+    const row = await this.requireTracked(siteId, taskGid);
+    row.scope = dto.scope;
+    await this.taskRepo.save(row);
+    await this.taskPageRepo.delete({ taskGid });
+    const pageIds = dto.scope === 'pages' ? [...new Set(dto.pageIds ?? [])] : [];
+    if (pageIds.length) {
+      await this.taskPageRepo.save(
+        pageIds.map((pageId) => this.taskPageRepo.create({ siteId, taskGid, pageId })),
+      );
+    }
+    return { scope: row.scope, pageIds };
+  }
+
+  async getScope(
+    siteId: string,
+    taskGid: string,
+  ): Promise<{ scope: 'sitewide' | 'pages' | null; pageIds: string[] }> {
+    const row = await this.requireTracked(siteId, taskGid);
+    const links = await this.taskPageRepo.find({ where: { taskGid }, select: ['pageId'] });
+    return { scope: row.scope ?? null, pageIds: links.map((l) => l.pageId) };
   }
 }

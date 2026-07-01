@@ -166,4 +166,15 @@ export const asanaApi = {
     unwrap<SubtaskResult>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/subtasks`, input)),
   linkTask: (siteId: string, taskGid: string, entityType: string | null, entityId: string | null) =>
     unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/link`, { entityType, entityId })),
+
+  // ── Optimization-Impact scope ─────────────────────────────────────────────
+  getScope: (siteId: string, taskGid: string) =>
+    unwrap<TaskScope>(apiClient.get(`${SITE(siteId)}/tasks/${taskGid}/scope`)),
+  setScope: (siteId: string, taskGid: string, scope: 'sitewide' | 'pages' | null, pageIds: string[]) =>
+    unwrap<TaskScope>(apiClient.put(`${SITE(siteId)}/tasks/${taskGid}/scope`, { scope, pageIds })),
+}
+
+export interface TaskScope {
+  scope: 'sitewide' | 'pages' | null
+  pageIds: string[]
 }
