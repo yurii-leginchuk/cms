@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Key, Eye, EyeOff, Check, RefreshCw, BookOpen, ChevronRight, Search } from 'lucide-react'
+import { Key, Eye, EyeOff, Check, RefreshCw, BookOpen, ChevronRight, Search, CheckSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useSettings, useUpsertSetting } from '@/hooks/useSettings'
@@ -177,6 +177,23 @@ export default function SettingsPage() {
             <div>
               <p className="text-[14px] font-medium text-[#e8eaed]">Prompt Library</p>
               <p className="text-[12px] text-[#9aa0a6] mt-0.5">Customize AI prompts for meta generation</p>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors" />
+        </Link>
+
+        {/* Asana integration quick link */}
+        <Link
+          to="/settings/asana"
+          className="flex items-center justify-between p-4 rounded-xl border border-white/8 bg-[#1a1d27] hover:border-white/15 hover:bg-[#1e2133] transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="size-9 rounded-lg bg-rose-500/15 flex items-center justify-center">
+              <CheckSquare className="size-4 text-rose-400" />
+            </div>
+            <div>
+              <p className="text-[14px] font-medium text-[#e8eaed]">Asana</p>
+              <p className="text-[12px] text-[#9aa0a6] mt-0.5">Connect a token, pick a workspace, map projects to sites</p>
             </div>
           </div>
           <ChevronRight className="size-4 text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors" />

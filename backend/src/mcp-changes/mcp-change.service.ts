@@ -20,12 +20,13 @@ import { SchemaService } from '../schema/schema.service';
 import { SchemaSyncService } from '../schema/schema-sync.service';
 import { ImageService } from '../images/image.service';
 import { ImageSyncService } from '../images/image-sync.service';
+import { AsanaTaskService } from '../asana/asana-task.service';
 
 export interface CreateChangeInput {
   siteId: string;
   module: McpChangeModule;
   action: McpChangeAction;
-  targetType: 'page' | 'image';
+  targetType: 'page' | 'image' | 'task';
   targetId: string;
   targetLabel?: string | null;
   payload: Record<string, unknown>;
@@ -63,6 +64,7 @@ export class McpChangeService {
     private readonly schemaSyncService: SchemaSyncService,
     private readonly imageService: ImageService,
     private readonly imageSyncService: ImageSyncService,
+    private readonly asanaTaskService: AsanaTaskService,
   ) {}
 
   // ── Create a PENDING proposal (what the MCP server calls) ───────────────────
@@ -138,6 +140,47 @@ export class McpChangeService {
           summary: `Set ALT on ${img.canonicalUrl}: "${truncate(String(p.alt ?? ''), 80)}"`,
         };
       }
+      // ── Asana (task-tracking) proposals ─────────────────────────────────────
+      case 'asana.create':
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? String(p.name ?? null),
+          summary: `Create Asana task "${truncate(String(p.name ?? ''), 80)}"`,
+        };
+      case 'asana.update': {
+        const fields = Object.keys(p).filter((k) => k !== 'taskGid');
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? null,
+          summary: `Update Asana task${input.targetLabel ? ` "${truncate(input.targetLabel, 60)}"` : ''}: ${fields.join(', ') || '(no fields)'}`,
+        };
+      }
+      case 'asana.status':
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? null,
+          summary: `Move Asana task to a section${p.completed !== undefined ? ` (completed=${p.completed})` : ''}`,
+        };
+      case 'asana.assignee':
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? null,
+          summary: p.assigneeGid ? 'Reassign Asana task' : 'Unassign Asana task',
+        };
+      case 'asana.subtask':
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? null,
+          summary: `Add Asana subtask "${truncate(String(p.name ?? ''), 80)}"`,
+        };
+      case 'asana.link':
+        return {
+          before: null,
+          targetLabel: input.targetLabel ?? null,
+          summary: p.entityType
+            ? `Link Asana task to ${p.entityType}:${p.entityId}`
+            : 'Unlink Asana task from its CMS entity',
+        };
       default:
         throw new BadRequestException(`Unsupported action: ${input.action}`);
     }
@@ -168,12 +211,12 @@ export class McpChangeService {
 
   async counts(
     siteId: string,
-  ): Promise<{ total: number; meta: number; schema: number; alt: number }> {
+  ): Promise<{ total: number; meta: number; schema: number; alt: number; asana: number }> {
     const rows = await this.repo.find({
       where: { siteId, status: 'pending' },
       select: ['module'],
     });
-    const c = { total: rows.length, meta: 0, schema: 0, alt: 0 };
+    const c = { total: rows.length, meta: 0, schema: 0, alt: 0, asana: 0 };
     for (const r of rows) c[r.module] += 1;
     return c;
   }
@@ -267,6 +310,57 @@ export class McpChangeService {
       case 'alt.set': {
         await this.imageService.setAlt(req.targetId, String(p.alt ?? ''));
         await this.imageSyncService.applyOne(req.siteId, req.targetId);
+        return;
+      }
+      // ── Asana — apply the write live to Asana (via AsanaTaskService) ─────────
+      case 'asana.create': {
+        await this.asanaTaskService.createTask(req.siteId, {
+          name: String(p.name),
+          notes: p.notes as string | undefined,
+          assigneeGid: p.assigneeGid as string | undefined,
+          dueOn: p.dueOn as string | undefined,
+          sectionGid: p.sectionGid as string | undefined,
+        });
+        return;
+      }
+      case 'asana.update': {
+        await this.asanaTaskService.updateTask(req.siteId, req.targetId, {
+          ...(p.name !== undefined ? { name: p.name as string } : {}),
+          ...(p.notes !== undefined ? { notes: p.notes as string } : {}),
+          ...(p.dueOn !== undefined ? { dueOn: p.dueOn as string | null } : {}),
+          ...(p.completed !== undefined ? { completed: p.completed as boolean } : {}),
+        });
+        return;
+      }
+      case 'asana.status': {
+        await this.asanaTaskService.setStatus(req.siteId, req.targetId, {
+          sectionGid: String(p.sectionGid),
+          ...(p.completed !== undefined ? { completed: p.completed as boolean } : {}),
+        });
+        return;
+      }
+      case 'asana.assignee': {
+        await this.asanaTaskService.setAssignee(
+          req.siteId,
+          req.targetId,
+          (p.assigneeGid as string | null) ?? null,
+        );
+        return;
+      }
+      case 'asana.subtask': {
+        await this.asanaTaskService.createSubtask(req.siteId, req.targetId, {
+          name: String(p.name),
+          notes: p.notes as string | undefined,
+          assigneeGid: p.assigneeGid as string | undefined,
+          dueOn: p.dueOn as string | undefined,
+        });
+        return;
+      }
+      case 'asana.link': {
+        await this.asanaTaskService.linkEntity(req.siteId, req.targetId, {
+          entityType: (p.entityType as string | null) ?? null,
+          entityId: (p.entityId as string | null) ?? null,
+        });
         return;
       }
       default:

@@ -13,6 +13,7 @@ import { registerDiscoveryTools } from './tools/discovery.js';
 import { registerMetaTools } from './tools/meta.js';
 import { registerSchemaTools } from './tools/schema.js';
 import { registerAltTools } from './tools/alt.js';
+import { registerAsanaTools } from './tools/asana.js';
 
 /** Build a fully-wired server (importable for the in-memory smoke test). */
 export function createServer(): McpServer {
@@ -25,6 +26,7 @@ export function createServer(): McpServer {
   registerMetaTools(server, client);
   registerSchemaTools(server, client);
   registerAltTools(server, client);
+  registerAsanaTools(server, client);
 
   return server;
 }

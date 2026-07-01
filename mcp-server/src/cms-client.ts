@@ -188,9 +188,9 @@ export class CmsClient {
   createChange(
     siteId: string,
     body: {
-      module: 'meta' | 'schema' | 'alt';
+      module: 'meta' | 'schema' | 'alt' | 'asana';
       action: string;
-      targetType: 'page' | 'image';
+      targetType: 'page' | 'image' | 'task';
       targetId: string;
       targetLabel?: string | null;
       payload: Record<string, unknown>;

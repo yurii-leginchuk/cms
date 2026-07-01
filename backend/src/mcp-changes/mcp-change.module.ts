@@ -10,6 +10,7 @@ import { PagesModule } from '../pages/pages.module';
 import { SyncModule } from '../sync/sync.module';
 import { SchemaModule } from '../schema/schema.module';
 import { ImageModule } from '../images/image.module';
+import { AsanaModule } from '../asana/asana.module';
 
 /**
  * The human-approval gate. Reuses the existing module services (Pages, Sync,
@@ -22,6 +23,7 @@ import { ImageModule } from '../images/image.module';
     SyncModule, // exports SyncService
     SchemaModule, // exports SchemaService + SchemaSyncService
     ImageModule, // exports ImageService + ImageSyncService
+    AsanaModule, // exports AsanaTaskService (gated task writes)
   ],
   controllers: [McpChangeController],
   providers: [McpChangeService],
