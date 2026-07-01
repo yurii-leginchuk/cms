@@ -106,3 +106,11 @@ export function useSyncAsana(siteId: string) {
     },
   })
 }
+
+export function useTrackAsanaTask(siteId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (url: string) => asanaApi.track(siteId, url),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['asana-tasks', siteId] }),
+  })
+}

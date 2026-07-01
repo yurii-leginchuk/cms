@@ -2,7 +2,7 @@ import apiClient from './client'
 
 export type AsanaConnStatus = 'untested' | 'verified' | 'failed'
 export type AsanaWebhookStatus = 'none' | 'pending' | 'active' | 'error'
-export type AsanaTaskOrigin = 'asana' | 'cms' | 'mcp'
+export type AsanaTaskOrigin = 'asana' | 'cms' | 'mcp' | 'tracked'
 
 export interface AsanaConnection {
   patSet: boolean
@@ -126,4 +126,6 @@ export const asanaApi = {
     ),
   task: (siteId: string, taskGid: string) =>
     unwrap<TaskDetail>(apiClient.get(`${SITE(siteId)}/tasks/${taskGid}`)),
+  track: (siteId: string, url: string) =>
+    unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/track`, { url })),
 }

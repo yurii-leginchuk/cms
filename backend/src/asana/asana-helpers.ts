@@ -76,6 +76,37 @@ export async function collectPaginated<T>(
   return out;
 }
 
+/**
+ * Extract an Asana task GID from a pasted task URL (or a raw GID). Handles:
+ *   - new format:  https://app.asana.com/1/{ws}/project/{proj}/task/{gid}[...]
+ *   - new short:   https://app.asana.com/1/{ws}/task/{gid}
+ *   - old format:  https://app.asana.com/0/{proj}/{gid}[/f]
+ *   - a bare numeric GID.
+ * Returns null when no plausible task id is present.
+ */
+export function parseAsanaTaskGid(input: string): string | null {
+  const s = (input || '').trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return s;
+
+  // Prefer an explicit .../task/{gid} segment (unambiguous).
+  const explicit = s.match(/\/task\/(\d+)/);
+  if (explicit) return explicit[1];
+
+  // Otherwise take the last all-numeric path segment (old /0/{proj}/{gid}[/f]).
+  try {
+    const u = new URL(s);
+    const segs = u.pathname.split('/').filter(Boolean);
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (/^\d+$/.test(segs[i])) return segs[i];
+    }
+  } catch {
+    // not a URL — fall through to a last-ditch scan
+  }
+  const run = s.match(/(\d{6,})/);
+  return run ? run[1] : null;
+}
+
 // ── Task payload → mirror row ────────────────────────────────────────────────
 
 export interface AsanaMembership {

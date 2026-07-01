@@ -13,6 +13,7 @@ import { AsanaProjectService } from './asana-project.service';
 import { AsanaSyncService } from './asana-sync.service';
 import { AsanaTaskService } from './asana-task.service';
 import { SetMappingDto } from './dto/set-mapping.dto';
+import { TrackTaskDto } from './dto/track-task.dto';
 
 /**
  * Per-site Asana endpoints (mapping, sections, sync, task reads). Phase 1 is
@@ -72,6 +73,13 @@ export class AsanaSiteController {
       linkedOnly: linkedOnly === 'true',
       aiOnly: aiOnly === 'true',
     });
+  }
+
+  /** Adopt an existing Asana task (created outside the CMS) for tracking. */
+  @Post('tasks/track')
+  @HttpCode(HttpStatus.OK)
+  trackTask(@Param('siteId') siteId: string, @Body() dto: TrackTaskDto) {
+    return this.tasks.trackByUrl(siteId, dto.url);
   }
 
   /** Task detail (+ subtasks), hydrated live from Asana. */

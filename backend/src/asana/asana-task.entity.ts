@@ -16,11 +16,12 @@ import {
  * Dual-clock honesty: `asanaModifiedAt` is Asana's own last-modified time;
  * `lastSyncedAt` is when WE last pulled it. They are never merged in the UI.
  *
- * `origin` = who created the row (`asana` = pulled from Asana; `cms` = a human
- * in the CMS; `mcp` = an AI/agent write) so a shared board never blurs human vs
- * agent authorship.
+ * `origin` = how the row entered the mirror: `cms` = a human created it in the
+ * CMS; `mcp` = an AI/agent created it; `tracked` = created outside the CMS and
+ * adopted for tracking by pasting its URL; `asana` = a transient read-only view
+ * (never persisted). So a shared board never blurs who created what.
  */
-export type AsanaTaskOrigin = 'asana' | 'cms' | 'mcp';
+export type AsanaTaskOrigin = 'asana' | 'cms' | 'mcp' | 'tracked';
 
 @Entity('asana_task')
 @Index('IDX_asana_task_site_completed', ['siteId', 'completed'])

@@ -5,6 +5,7 @@ import {
   collectPaginated,
   deriveSection,
   mapTaskToMirror,
+  parseAsanaTaskGid,
   type AsanaPage,
   type AsanaTaskRaw,
 } from './asana-helpers';
@@ -105,6 +106,28 @@ describe('deriveSection', () => {
   it('returns null when there are no sections', () => {
     expect(deriveSection([], 'p1')).toBeNull();
     expect(deriveSection(undefined, 'p1')).toBeNull();
+  });
+});
+
+describe('parseAsanaTaskGid', () => {
+  it('parses the new /task/{gid} URL format', () => {
+    expect(
+      parseAsanaTaskGid('https://app.asana.com/1/1210460983765359/project/1210461038425476/task/1215972689106480'),
+    ).toBe('1215972689106480');
+  });
+  it('parses the short new /task/{gid} format with a query', () => {
+    expect(parseAsanaTaskGid('https://app.asana.com/1/999/task/12345?focus=true')).toBe('12345');
+  });
+  it('parses the old /0/{proj}/{gid} format (with trailing /f)', () => {
+    expect(parseAsanaTaskGid('https://app.asana.com/0/1210461038425476/1215972689106480/f')).toBe('1215972689106480');
+  });
+  it('accepts a bare numeric gid', () => {
+    expect(parseAsanaTaskGid('1215972689106480')).toBe('1215972689106480');
+  });
+  it('returns null for junk', () => {
+    expect(parseAsanaTaskGid('')).toBeNull();
+    expect(parseAsanaTaskGid('https://example.com/no/numbers/here')).toBeNull();
+    expect(parseAsanaTaskGid('not a url')).toBeNull();
   });
 });
 

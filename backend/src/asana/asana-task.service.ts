@@ -1,11 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { AsanaTask } from './asana-task.entity';
 import { AsanaConnectionService } from './asana-connection.service';
 import { AsanaProjectService } from './asana-project.service';
-import { AsanaApiClient } from './asana-api-client';
-import { mapTaskToMirror } from './asana-helpers';
+import { AsanaSyncService } from './asana-sync.service';
+import { AsanaApiClient, AsanaError } from './asana-api-client';
+import { mapTaskToMirror, parseAsanaTaskGid } from './asana-helpers';
 
 export interface ListTasksParams {
   page?: number;
@@ -42,8 +43,40 @@ export class AsanaTaskService {
     private readonly taskRepo: Repository<AsanaTask>,
     private readonly connection: AsanaConnectionService,
     private readonly projects: AsanaProjectService,
+    private readonly sync: AsanaSyncService,
     private readonly api: AsanaApiClient,
   ) {}
+
+  /**
+   * Adopt an existing Asana task (created outside the CMS) for tracking, from a
+   * pasted task URL or raw GID. The task must belong to the site's mapped
+   * project; it lands in the mirror with origin `tracked` and is refreshed by
+   * "Sync now" like any CMS task.
+   */
+  async trackByUrl(siteId: string, url: string): Promise<AsanaTask> {
+    const map = await this.projects.requireProject(siteId);
+    const gid = parseAsanaTaskGid(url);
+    if (!gid) {
+      throw new BadRequestException("Couldn't find an Asana task id in that URL.");
+    }
+    const token = await this.connection.getToken();
+    let raw;
+    try {
+      raw = await this.api.getTask(token, gid);
+    } catch (e) {
+      if (e instanceof AsanaError && e.status === 404) {
+        throw new NotFoundException("That Asana task doesn't exist, or the token can't access it.");
+      }
+      throw e;
+    }
+    const inProject = (raw.memberships ?? []).some((m) => m.project?.gid === map.projectGid);
+    if (!inProject) {
+      throw new BadRequestException(
+        `That task isn't in this site's Asana project${map.projectName ? ` (${map.projectName})` : ''}.`,
+      );
+    }
+    return this.sync.upsertTracked(raw, siteId, map.projectGid!, 'tracked');
+  }
 
   /** Paginated, filtered list of a site's TOP-LEVEL mirrored tasks. */
   async list(siteId: string, params: ListTasksParams): Promise<TaskListResult> {

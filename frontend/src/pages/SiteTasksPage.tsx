@@ -3,7 +3,7 @@ import { Link, useParams, Navigate, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ChevronLeft, ChevronRight, ExternalLink, Search, CheckSquare, RefreshCw,
-  AlertTriangle, Sparkles, Circle, CheckCircle2, User, Calendar, ListTree,
+  AlertTriangle, Sparkles, Circle, CheckCircle2, User, Calendar, ListTree, Link2, Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ import { RelativeClock } from '@/components/index-status/RelativeClock'
 import { useSite } from '@/hooks/useSites'
 import {
   useAsanaConnection, useAsanaMapping, useAsanaSections, useAsanaTasks, useSyncAsana,
+  useTrackAsanaTask,
 } from '@/hooks/useAsana'
 import type { AsanaTask } from '@/api/asana'
 
@@ -73,6 +74,8 @@ export default function SiteTasksPage() {
   const ready = conn?.status === 'verified' && !!mapping?.projectGid
   const { data: sections } = useAsanaSections(id, ready)
   const sync = useSyncAsana(id!)
+  const track = useTrackAsanaTask(id!)
+  const [trackUrl, setTrackUrl] = useState('')
 
   const { data: taskList, isLoading: tasksLoading, isFetching } = useAsanaTasks(
     ready ? id : undefined,
@@ -96,9 +99,21 @@ export default function SiteTasksPage() {
   async function handleSync() {
     try {
       const res = await sync.mutateAsync()
-      toast.success(`Synced ${res.synced} task${res.synced === 1 ? '' : 's'} from Asana${res.pruned ? `, removed ${res.pruned} stale` : ''}.`)
+      toast.success(`Refreshed ${res.synced} tracked task${res.synced === 1 ? '' : 's'}${res.pruned ? `, removed ${res.pruned} deleted` : ''}.`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't sync from Asana.")
+    }
+  }
+
+  async function handleTrack() {
+    const url = trackUrl.trim()
+    if (!url) return
+    try {
+      const t = await track.mutateAsync(url)
+      setTrackUrl('')
+      toast.success(`Now tracking “${t.name}”.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't track that task.")
     }
   }
 
@@ -190,6 +205,30 @@ export default function SiteTasksPage() {
               </Button>
             </div>
 
+            {/* Track an existing (outside-CMS) task by URL */}
+            <div className="rounded-xl border border-white/8 bg-[#1a1d27]/40 px-4 py-3 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-[13px] text-[#9aa0a6]">
+                <Link2 className="size-4" /><span className="text-[#e8eaed]">Track an existing task</span>
+              </div>
+              <div className="flex-1 min-w-[240px]">
+                <Input
+                  value={trackUrl}
+                  onChange={(e) => setTrackUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleTrack() }}
+                  placeholder="Paste an Asana task URL (or GID) from this project…"
+                  className="bg-[#1a1d27] border-white/8 text-[#e8eaed] placeholder:text-[#9aa0a6]/60 h-9"
+                />
+              </div>
+              <Button
+                onClick={handleTrack}
+                disabled={!trackUrl.trim() || track.isPending}
+                className="h-9 bg-[#4e8af4] hover:bg-[#4e8af4]/90 text-white gap-1.5 shrink-0"
+              >
+                {track.isPending ? <RefreshCw className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                Track
+              </Button>
+            </div>
+
             {/* Filters */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="relative max-w-xs flex-1 min-w-[220px]">
@@ -248,7 +287,7 @@ export default function SiteTasksPage() {
                           <p className="text-[#9aa0a6] text-sm text-center max-w-sm">
                             {debouncedSearch || section || completed || aiOnly
                               ? 'No tasks match these filters.'
-                              : 'No CMS tasks yet. Tasks you create from the CMS appear here — this page tracks only the tasks the CMS created, not the whole Asana project.'}
+                              : 'No tracked tasks yet. Tasks you create from the CMS appear here — or paste an Asana task URL above to start tracking an existing one. (This page tracks only these tasks, not the whole Asana project.)'}
                           </p>
                         </div>
                       </TableCell>
@@ -264,6 +303,9 @@ export default function SiteTasksPage() {
                           <div className="flex items-center gap-2">
                             {r.origin === 'mcp' && (
                               <Sparkles className="size-3.5 text-violet-400 flex-shrink-0" aria-label="AI-created" />
+                            )}
+                            {r.origin === 'tracked' && (
+                              <Link2 className="size-3.5 text-[#9aa0a6] flex-shrink-0" aria-label="Tracked (created outside CMS)" />
                             )}
                             <span className={`truncate max-w-[300px] text-[13px] ${r.completed ? 'text-[#9aa0a6] line-through' : 'text-[#e8eaed]'}`} title={r.name}>
                               {r.name}
