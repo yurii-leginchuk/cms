@@ -39,13 +39,22 @@ describe('McpChangeService accept/reject dispatch', () => {
     const schemaSyncService = { publish: jest.fn().mockResolvedValue({}) };
     const imageService = { setAlt: jest.fn().mockResolvedValue({}) };
     const imageSyncService = { applyOne: jest.fn().mockResolvedValue({}) };
+    const asanaTaskService = {
+      createTask: jest.fn().mockResolvedValue({}),
+      updateTask: jest.fn().mockResolvedValue({}),
+      setStatus: jest.fn().mockResolvedValue({}),
+      setAssignee: jest.fn().mockResolvedValue({}),
+      createSubtask: jest.fn().mockResolvedValue({}),
+      linkEntity: jest.fn().mockResolvedValue({}),
+    };
 
     const service = new McpChangeService(
       repo as any, pageRepo as any, schemaRepo as any, imageRepo as any,
       pagesService as any, syncService as any, schemaService as any,
       schemaSyncService as any, imageService as any, imageSyncService as any,
+      asanaTaskService as any,
     );
-    return { service, req, repo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService };
+    return { service, req, repo, pagesService, syncService, schemaService, schemaSyncService, imageService, imageSyncService, asanaTaskService };
   }
 
   it('meta.update → updateMeta + per-page sync, marks accepted', async () => {
@@ -58,6 +67,29 @@ describe('McpChangeService accept/reject dispatch', () => {
     expect(ctx.syncService.triggerPageSync).toHaveBeenCalledWith('site-1', 'page-1');
     expect(out.status).toBe('accepted');
     expect(out.decidedAt).toBeInstanceOf(Date);
+  });
+
+  it('asana.create → AsanaTaskService.createTask, marks accepted', async () => {
+    const ctx = makeService({
+      module: 'asana', action: 'asana.create', targetType: 'task', targetId: '-',
+      payload: { name: 'Fix /pricing', dueOn: '2026-07-20', sectionGid: 'sec-1' },
+    });
+    const out = await ctx.service.accept('req-1');
+    expect(ctx.asanaTaskService.createTask).toHaveBeenCalledWith('site-1', {
+      name: 'Fix /pricing', notes: undefined, assigneeGid: undefined, dueOn: '2026-07-20', sectionGid: 'sec-1',
+    });
+    expect(out.status).toBe('accepted');
+  });
+
+  it('asana.status → AsanaTaskService.setStatus with the target task gid', async () => {
+    const ctx = makeService({
+      module: 'asana', action: 'asana.status', targetType: 'task', targetId: 'task-9',
+      payload: { sectionGid: 'sec-2', completed: true },
+    });
+    await ctx.service.accept('req-1');
+    expect(ctx.asanaTaskService.setStatus).toHaveBeenCalledWith('site-1', 'task-9', {
+      sectionGid: 'sec-2', completed: true,
+    });
   });
 
   it('schema.add → createManaged + publish', async () => {

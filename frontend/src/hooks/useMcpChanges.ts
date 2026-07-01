@@ -30,6 +30,7 @@ function invalidateAfterDecision(qc: ReturnType<typeof useQueryClient>, siteId: 
   qc.invalidateQueries({ queryKey: ['schema', siteId] })
   qc.invalidateQueries({ queryKey: ['schemas', siteId] })
   qc.invalidateQueries({ queryKey: ['images', siteId] })
+  qc.invalidateQueries({ queryKey: ['asana-tasks', siteId] })
 }
 
 export function useAcceptChange(siteId: string) {

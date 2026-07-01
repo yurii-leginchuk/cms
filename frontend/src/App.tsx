@@ -15,6 +15,9 @@ import SitePromptsPage from '@/pages/SitePromptsPage'
 import SiteBriefPage from '@/pages/SiteBriefPage'
 import SiteChatPage from '@/pages/SiteChatPage'
 import SitePageSpeedPage from '@/pages/SitePageSpeedPage'
+import SiteTasksPage from '@/pages/SiteTasksPage'
+import TaskDetailPage from '@/pages/TaskDetailPage'
+import AsanaSettingsPage from '@/pages/AsanaSettingsPage'
 import ImpactPage from '@/pages/ImpactPage'
 import ImpactPagesPage from '@/pages/ImpactPagesPage'
 import ImpactKeywordsPage from '@/pages/ImpactKeywordsPage'
@@ -39,10 +42,13 @@ export default function App() {
           <Route path="sites/:id/brief" element={<SiteBriefPage />} />
           <Route path="sites/:id/chat" element={<SiteChatPage />} />
           <Route path="sites/:id/pagespeed" element={<SitePageSpeedPage />} />
+          <Route path="sites/:id/tasks" element={<SiteTasksPage />} />
+          <Route path="sites/:id/tasks/:taskGid" element={<TaskDetailPage />} />
           <Route path="sites/:id/impact" element={<ImpactPage />} />
           <Route path="sites/:id/impact/pages" element={<ImpactPagesPage />} />
           <Route path="sites/:id/impact/keywords" element={<ImpactKeywordsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/asana" element={<AsanaSettingsPage />} />
           <Route path="settings/prompts" element={<PromptsPage />} />
           <Route path="settings/usage" element={<UsagePage />} />
         </Route>

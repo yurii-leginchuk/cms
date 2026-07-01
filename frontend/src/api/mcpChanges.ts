@@ -1,6 +1,6 @@
 import apiClient from './client'
 
-export type McpChangeModule = 'meta' | 'schema' | 'alt'
+export type McpChangeModule = 'meta' | 'schema' | 'alt' | 'asana'
 export type McpChangeStatus = 'pending' | 'accepted' | 'rejected'
 export type McpChangeAction =
   | 'meta.update'
@@ -8,13 +8,19 @@ export type McpChangeAction =
   | 'schema.update'
   | 'schema.delete'
   | 'alt.set'
+  | 'asana.create'
+  | 'asana.update'
+  | 'asana.status'
+  | 'asana.assignee'
+  | 'asana.subtask'
+  | 'asana.link'
 
 export interface McpChangeRequest {
   id: string
   siteId: string
   module: McpChangeModule
   action: McpChangeAction
-  targetType: 'page' | 'image'
+  targetType: 'page' | 'image' | 'task'
   targetId: string
   targetLabel: string | null
   payload: Record<string, unknown>
@@ -32,6 +38,7 @@ export interface McpChangeCounts {
   meta: number
   schema: number
   alt: number
+  asana: number
 }
 
 export interface BulkResult {

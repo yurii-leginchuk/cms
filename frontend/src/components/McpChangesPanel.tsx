@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   Sparkles, ChevronDown, ChevronRight, UploadCloud, X, CheckCircle2,
-  AlertTriangle, Loader2, FileText, Braces, ImageIcon,
+  AlertTriangle, Loader2, FileText, Braces, ImageIcon, CheckSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,6 +19,7 @@ const MODULES: { key: McpChangeModule; label: string; icon: typeof FileText }[] 
   { key: 'meta', label: 'Meta', icon: FileText },
   { key: 'schema', label: 'Schema', icon: Braces },
   { key: 'alt', label: 'Alt text', icon: ImageIcon },
+  { key: 'asana', label: 'Asana', icon: CheckSquare },
 ]
 
 const ACTION_LABEL: Record<string, string> = {
@@ -27,6 +28,12 @@ const ACTION_LABEL: Record<string, string> = {
   'schema.update': 'Edit',
   'schema.delete': 'Delete',
   'alt.set': 'Set',
+  'asana.create': 'Create',
+  'asana.update': 'Edit',
+  'asana.status': 'Status',
+  'asana.assignee': 'Assign',
+  'asana.subtask': 'Subtask',
+  'asana.link': 'Link',
 }
 
 export function McpChangesPanel({
@@ -339,7 +346,24 @@ function ProposalRow({
 function ProposalDiff({ item }: { item: McpChangeRequest }) {
   if (item.module === 'meta') return <MetaDiff item={item} />
   if (item.module === 'alt') return <AltDiff item={item} />
+  if (item.module === 'asana') return <AsanaDiff item={item} />
   return <SchemaDiff item={item} />
+}
+
+function AsanaDiff({ item }: { item: McpChangeRequest }) {
+  const payload = item.payload as Record<string, unknown>
+  const keys = Object.keys(payload)
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-emerald-300">{item.summary}</p>
+      {keys.map((k) => (
+        <div key={k} className="grid grid-cols-[110px_1fr] gap-2 text-[12px]">
+          <span className="text-[#9aa0a6]">{humanize(k)}</span>
+          <span className="text-[#4e8af4] break-all">{fmt(payload[k])}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function humanize(key: string) {
