@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { RelativeClock } from '@/components/index-status/RelativeClock'
 import { useSites } from '@/hooks/useSites'
 import {
   useAsanaConnection, useSetAsanaPat, useDisconnectAsana, useVerifyAsana,
   useSetAsanaWorkspace, useAsanaProjects, useAsanaMapping, useSetAsanaMapping,
+  useEstablishWebhook, useRemoveWebhook,
 } from '@/hooks/useAsana'
-import type { AsanaProject, AsanaWorkspace } from '@/api/asana'
+import type { AsanaProject, AsanaWorkspace, AsanaWebhookStatus } from '@/api/asana'
 
 const selectCls =
   'h-9 px-3 pr-8 rounded-lg bg-[#1a1d27] border border-white/8 text-[13px] text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#4e8af4]/50 appearance-none cursor-pointer'
@@ -272,9 +272,18 @@ function MappingCard({ ready }: { ready: boolean }) {
   )
 }
 
+const WEBHOOK_META: Record<AsanaWebhookStatus, { label: string; cls: string }> = {
+  none: { label: 'off', cls: 'bg-white/[0.03] text-[#9aa0a6] border-white/10' },
+  pending: { label: 'connecting', cls: 'bg-amber-400/10 text-amber-300 border-amber-400/25' },
+  active: { label: 'live', cls: 'bg-emerald-400/10 text-emerald-300 border-emerald-400/25' },
+  error: { label: 'error', cls: 'bg-red-400/10 text-red-300 border-red-400/25' },
+}
+
 function SiteMappingRow({ siteId, siteName, projects }: { siteId: string; siteName: string; projects: AsanaProject[] }) {
   const { data: mapping } = useAsanaMapping(siteId)
   const setMapping = useSetAsanaMapping(siteId)
+  const establish = useEstablishWebhook(siteId)
+  const removeHook = useRemoveWebhook(siteId)
 
   async function handle(gid: string) {
     if (!gid) return
@@ -286,9 +295,27 @@ function SiteMappingRow({ siteId, siteName, projects }: { siteId: string; siteNa
     }
   }
 
+  const hookOn = mapping?.webhookStatus === 'active' || mapping?.webhookStatus === 'pending'
+  async function toggleHook() {
+    try {
+      if (hookOn) {
+        await removeHook.mutateAsync()
+        toast.success('Live sync disabled.')
+      } else {
+        await establish.mutateAsync()
+        toast.success('Live sync enabled.')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't change live sync.")
+    }
+  }
+
+  const wm = WEBHOOK_META[mapping?.webhookStatus ?? 'none']
+  const busy = establish.isPending || removeHook.isPending
+
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <span className="text-[13px] text-[#e8eaed] w-48 truncate" title={siteName}>{siteName}</span>
+      <span className="text-[13px] text-[#e8eaed] w-40 truncate" title={siteName}>{siteName}</span>
       <select
         value={mapping?.projectGid ?? ''}
         onChange={(e) => handle(e.target.value)}
@@ -301,10 +328,24 @@ function SiteMappingRow({ siteId, siteName, projects }: { siteId: string; siteNa
           <option key={p.gid} value={p.gid} className="bg-[#1a1d27]">{p.name}</option>
         ))}
       </select>
-      {mapping?.lastFullSyncAt && (
-        <span className="text-[11px] text-[#9aa0a6] w-28 text-right">
-          synced <RelativeClock ts={mapping.lastFullSyncAt} />
-        </span>
+      {mapping?.projectGid && (
+        <>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border ${wm.cls}`}
+            title="Live status sync via Asana webhook (needs a public URL)"
+          >
+            <span className="size-1.5 rounded-full bg-current opacity-70" />live: {wm.label}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={toggleHook}
+            disabled={busy}
+            className="h-7 px-2 text-[11px] text-[#9aa0a6] hover:text-[#e8eaed] border border-white/8"
+          >
+            {busy ? <RefreshCw className="size-3 animate-spin" /> : hookOn ? 'Disable' : 'Enable'}
+          </Button>
+        </>
       )}
     </div>
   )

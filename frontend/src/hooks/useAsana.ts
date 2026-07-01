@@ -115,6 +115,22 @@ export function useSyncAsana(siteId: string) {
   })
 }
 
+export function useEstablishWebhook(siteId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => asanaApi.establishWebhook(siteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['asana-mapping', siteId] }),
+  })
+}
+
+export function useRemoveWebhook(siteId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => asanaApi.removeWebhook(siteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['asana-mapping', siteId] }),
+  })
+}
+
 export function useTrackAsanaTask(siteId: string) {
   const qc = useQueryClient()
   return useMutation({

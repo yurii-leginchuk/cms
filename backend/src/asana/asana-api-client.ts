@@ -222,4 +222,37 @@ export class AsanaApiClient {
       data: { data: { task: taskGid } },
     });
   }
+
+  // ── Webhooks ────────────────────────────────────────────────────────────────
+
+  /**
+   * Establish a webhook on a resource (the project). Asana calls `target` with an
+   * `X-Hook-Secret` handshake DURING this request; the target must echo it back
+   * (see AsanaWebhookService) before this resolves with the webhook gid.
+   */
+  async createWebhook(
+    token: string,
+    resourceGid: string,
+    target: string,
+  ): Promise<{ gid: string }> {
+    const env = await this.raw<{ data: { gid: string } }>(token, 'POST', '/webhooks', {
+      data: {
+        data: {
+          resource: resourceGid,
+          target,
+          filters: [
+            { resource_type: 'task', action: 'added' },
+            { resource_type: 'task', action: 'changed' },
+            { resource_type: 'task', action: 'removed' },
+            { resource_type: 'task', action: 'deleted' },
+          ],
+        },
+      },
+    });
+    return env.data;
+  }
+
+  async deleteWebhook(token: string, webhookGid: string): Promise<void> {
+    await this.raw(token, 'DELETE', `/webhooks/${webhookGid}`, {});
+  }
 }

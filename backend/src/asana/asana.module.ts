@@ -10,8 +10,10 @@ import { AsanaConnectionService } from './asana-connection.service';
 import { AsanaProjectService } from './asana-project.service';
 import { AsanaSyncService } from './asana-sync.service';
 import { AsanaTaskService } from './asana-task.service';
+import { AsanaWebhookService } from './asana-webhook.service';
 import { AsanaController } from './asana.controller';
 import { AsanaSiteController } from './asana-site.controller';
+import { AsanaWebhookController } from './asana-webhook.controller';
 
 /**
  * Asana integration.
@@ -26,13 +28,14 @@ import { AsanaSiteController } from './asana-site.controller';
     TypeOrmModule.forFeature([AsanaConnection, AsanaProjectMap, AsanaTask, Site]),
     CryptoModule,
   ],
-  controllers: [AsanaController, AsanaSiteController],
+  controllers: [AsanaController, AsanaSiteController, AsanaWebhookController],
   providers: [
     AsanaApiClient,
     AsanaConnectionService,
     AsanaProjectService,
     AsanaSyncService,
     AsanaTaskService,
+    AsanaWebhookService,
   ],
   exports: [AsanaTaskService, AsanaProjectService, AsanaConnectionService],
 })

@@ -14,6 +14,7 @@ import {
 import { AsanaProjectService } from './asana-project.service';
 import { AsanaSyncService } from './asana-sync.service';
 import { AsanaTaskService } from './asana-task.service';
+import { AsanaWebhookService } from './asana-webhook.service';
 import { SetMappingDto } from './dto/set-mapping.dto';
 import { TrackTaskDto } from './dto/track-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -34,6 +35,7 @@ export class AsanaSiteController {
     private readonly projects: AsanaProjectService,
     private readonly sync: AsanaSyncService,
     private readonly tasks: AsanaTaskService,
+    private readonly webhook: AsanaWebhookService,
   ) {}
 
   @Get('mapping')
@@ -57,6 +59,19 @@ export class AsanaSiteController {
   @HttpCode(HttpStatus.OK)
   syncNow(@Param('siteId') siteId: string) {
     return this.sync.refreshTrackedTasks(siteId);
+  }
+
+  /** Establish the Asana webhook for live status sync (needs a public URL). */
+  @Post('webhook')
+  @HttpCode(HttpStatus.OK)
+  establishWebhook(@Param('siteId') siteId: string) {
+    return this.webhook.establish(siteId);
+  }
+
+  /** Remove the Asana webhook. */
+  @Delete('webhook')
+  removeWebhook(@Param('siteId') siteId: string) {
+    return this.webhook.remove(siteId);
   }
 
   /** Paginated, filtered mirror list. */

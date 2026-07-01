@@ -133,6 +133,8 @@ export const asanaApi = {
     unwrap<AsanaMapping>(apiClient.put(`${SITE(siteId)}/mapping`, { projectGid })),
   sections: (siteId: string) => unwrap<AsanaSection[]>(apiClient.get(`${SITE(siteId)}/sections`)),
   sync: (siteId: string) => unwrap<SyncResult>(apiClient.post(`${SITE(siteId)}/sync`)),
+  establishWebhook: (siteId: string) => unwrap<AsanaMapping>(apiClient.post(`${SITE(siteId)}/webhook`)),
+  removeWebhook: (siteId: string) => unwrap<AsanaMapping>(apiClient.delete(`${SITE(siteId)}/webhook`)),
   tasks: (siteId: string, params: ListTasksParams) =>
     unwrap<TaskListResult>(
       apiClient.get(`${SITE(siteId)}/tasks`, {

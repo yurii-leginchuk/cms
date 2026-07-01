@@ -19,7 +19,7 @@ import {
   useAsanaConnection, useAsanaMapping, useAsanaSections, useAsanaTasks, useSyncAsana,
   useTrackAsanaTask, useCreateAsanaTask, useUntrackAsanaTask, useAsanaUsers,
 } from '@/hooks/useAsana'
-import type { AsanaTask } from '@/api/asana'
+import type { AsanaTask, AsanaWebhookStatus } from '@/api/asana'
 
 const PAGE_LIMIT = 50
 const OVERDUE_DAYS = 0
@@ -44,6 +44,27 @@ function SectionChip({ name, completed }: { name: string | null; completed: bool
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border bg-sky-400/10 text-sky-300 border-sky-400/25">
       <Circle className="size-2.5" />{name || 'No section'}
+    </span>
+  )
+}
+
+/** Honest webhook-health chip — never claims "live" when sync is actually off. */
+function WebhookChip({ status, lastReceivedAt }: { status?: AsanaWebhookStatus; lastReceivedAt: string | null }) {
+  const recent = lastReceivedAt && Date.now() - new Date(lastReceivedAt).getTime() < 3_600_000
+  let cls = 'bg-white/[0.03] text-[#9aa0a6] border-white/10'
+  let label = 'live sync: off — use Refresh'
+  let title = 'No webhook — hit Refresh to pull the latest from Asana.'
+  if (status === 'active') {
+    if (recent) { cls = 'bg-emerald-400/10 text-emerald-300 border-emerald-400/25'; label = 'receiving'; title = 'Webhook active and receiving events.' }
+    else { cls = 'bg-white/[0.03] text-[#9aa0a6] border-white/10'; label = 'live · idle'; title = 'Webhook active but quiet (no recent events).' }
+  } else if (status === 'pending') {
+    cls = 'bg-amber-400/10 text-amber-300 border-amber-400/25'; label = 'connecting'; title = 'Webhook handshake in progress.'
+  } else if (status === 'error') {
+    cls = 'bg-red-400/10 text-red-300 border-red-400/25'; label = 'webhook error'; title = 'Webhook failed — use Refresh; re-enable in settings.'
+  }
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border ${cls}`} title={title}>
+      <span className="size-1.5 rounded-full bg-current opacity-70" />{label}
     </span>
   )
 }
@@ -230,9 +251,7 @@ export default function SiteTasksPage() {
               <div className="text-[13px] text-[#9aa0a6]">
                 Last synced <RelativeClock ts={mapping?.lastFullSyncAt ?? null} emptyLabel="never" staleDays={1} />
               </div>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border bg-white/[0.03] text-[#9aa0a6] border-white/10" title="Webhook live-sync arrives in a later phase. For now, use Refresh to pull the latest from Asana.">
-                <span className="size-1.5 rounded-full bg-[#9aa0a6]/40" />Live sync: off — use Refresh
-              </span>
+              <WebhookChip status={mapping?.webhookStatus} lastReceivedAt={mapping?.webhookLastReceivedAt ?? null} />
               <div className="flex-1" />
               {mapping?.syncError && (
                 <span className="text-[12px] text-red-400 inline-flex items-center gap-1" title={mapping.syncError}>
