@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   ChevronLeft, ChevronRight, ExternalLink, Search, CheckSquare, RefreshCw,
   AlertTriangle, Sparkles, Circle, CheckCircle2, User, Calendar, ListTree, Link2, Plus,
+  Unlink, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +17,7 @@ import { RelativeClock } from '@/components/index-status/RelativeClock'
 import { useSite } from '@/hooks/useSites'
 import {
   useAsanaConnection, useAsanaMapping, useAsanaSections, useAsanaTasks, useSyncAsana,
-  useTrackAsanaTask,
+  useTrackAsanaTask, useCreateAsanaTask, useUntrackAsanaTask, useAsanaUsers,
 } from '@/hooks/useAsana'
 import type { AsanaTask } from '@/api/asana'
 
@@ -73,9 +74,15 @@ export default function SiteTasksPage() {
   const { data: mapping } = useAsanaMapping(id)
   const ready = conn?.status === 'verified' && !!mapping?.projectGid
   const { data: sections } = useAsanaSections(id, ready)
+  const { data: users } = useAsanaUsers(ready)
   const sync = useSyncAsana(id!)
   const track = useTrackAsanaTask(id!)
+  const createTask = useCreateAsanaTask(id!)
+  const untrack = useUntrackAsanaTask(id!)
   const [trackUrl, setTrackUrl] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const emptyCreate = { name: '', sectionGid: '', assigneeGid: '', dueOn: '' }
+  const [createForm, setCreateForm] = useState(emptyCreate)
 
   const { data: taskList, isLoading: tasksLoading, isFetching } = useAsanaTasks(
     ready ? id : undefined,
@@ -117,6 +124,33 @@ export default function SiteTasksPage() {
     }
   }
 
+  async function handleCreate() {
+    const name = createForm.name.trim()
+    if (!name) return
+    try {
+      const t = await createTask.mutateAsync({
+        name,
+        sectionGid: createForm.sectionGid || undefined,
+        assigneeGid: createForm.assigneeGid || undefined,
+        dueOn: createForm.dueOn || undefined,
+      })
+      setCreateForm(emptyCreate)
+      setShowCreate(false)
+      toast.success(`Created “${t.name}” in Asana.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't create the task.")
+    }
+  }
+
+  async function handleUntrack(taskGid: string, name: string) {
+    try {
+      await untrack.mutateAsync(taskGid)
+      toast.success(`Stopped tracking “${name}”. (Still in Asana — re-track by URL anytime.)`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't stop tracking.")
+    }
+  }
+
   const rows = taskList?.data ?? []
   const meta = taskList?.meta
 
@@ -147,9 +181,20 @@ export default function SiteTasksPage() {
             <span className="text-[#9aa0a6] text-[15px]">Tasks</span>
             {site && <StatusBadge status={site.status ?? 'idle'} />}
           </div>
-          {ready && mapping?.projectName && (
-            <span className="text-[12px] text-[#9aa0a6]">Project: <span className="text-[#e8eaed]">{mapping.projectName}</span></span>
-          )}
+          <div className="flex items-center gap-3">
+            {ready && mapping?.projectName && (
+              <span className="text-[12px] text-[#9aa0a6]">Project: <span className="text-[#e8eaed]">{mapping.projectName}</span></span>
+            )}
+            {ready && (
+              <Button
+                size="sm"
+                onClick={() => setShowCreate((v) => !v)}
+                className="h-8 px-3 text-[13px] bg-[#4e8af4] hover:bg-[#4e8af4]/90 text-white gap-1.5"
+              >
+                <Plus className="size-3.5" />New task
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -204,6 +249,44 @@ export default function SiteTasksPage() {
                 {sync.isPending ? 'Syncing…' : 'Refresh'}
               </Button>
             </div>
+
+            {/* New task */}
+            {showCreate && (
+              <div className="rounded-xl border border-[#4e8af4]/25 bg-[#4e8af4]/[0.04] px-4 py-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-medium text-[#e8eaed]">New task in {mapping?.projectName}</span>
+                  <button onClick={() => setShowCreate(false)} className="text-[#9aa0a6] hover:text-[#e8eaed]"><X className="size-4" /></button>
+                </div>
+                <Input
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+                  placeholder="Task name…"
+                  className="bg-[#1a1d27] border-white/8 text-[#e8eaed] placeholder:text-[#9aa0a6]/60 h-9"
+                  autoFocus
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <select value={createForm.sectionGid} onChange={(e) => setCreateForm((f) => ({ ...f, sectionGid: e.target.value }))} className={selectCls} style={selectBg}>
+                    <option value="" className="bg-[#1a1d27]">No section</option>
+                    {(sections ?? []).map((s) => <option key={s.gid} value={s.gid} className="bg-[#1a1d27]">{s.name}</option>)}
+                  </select>
+                  <select value={createForm.assigneeGid} onChange={(e) => setCreateForm((f) => ({ ...f, assigneeGid: e.target.value }))} className={selectCls} style={selectBg}>
+                    <option value="" className="bg-[#1a1d27]">Unassigned</option>
+                    {(users ?? []).map((u) => <option key={u.gid} value={u.gid} className="bg-[#1a1d27]">{u.name}</option>)}
+                  </select>
+                  <input
+                    type="date"
+                    value={createForm.dueOn}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, dueOn: e.target.value }))}
+                    className="h-9 px-3 rounded-lg bg-[#1a1d27] border border-white/8 text-[13px] text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#4e8af4]/50"
+                  />
+                  <div className="flex-1" />
+                  <Button onClick={handleCreate} disabled={!createForm.name.trim() || createTask.isPending} className="h-9 bg-[#4e8af4] hover:bg-[#4e8af4]/90 text-white gap-1.5">
+                    {createTask.isPending ? <RefreshCw className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Create
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Track an existing (outside-CMS) task by URL */}
             <div className="rounded-xl border border-white/8 bg-[#1a1d27]/40 px-4 py-3 flex flex-wrap items-center gap-3">
@@ -331,12 +414,22 @@ export default function SiteTasksPage() {
                           )}
                         </TableCell>
                         <TableCell><DueDate dueOn={r.dueOn} completed={r.completed} /></TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
-                          {r.permalinkUrl && (
-                            <a href={r.permalinkUrl} target="_blank" rel="noopener noreferrer" title="Open in Asana" className="text-[#9aa0a6] hover:text-[#e8eaed]">
-                              <ExternalLink className="size-3.5" />
-                            </a>
-                          )}
+                        <TableCell onClick={(e) => e.stopPropagation()} className="w-16">
+                          <div className="flex items-center gap-2.5 justify-end pr-1">
+                            {r.permalinkUrl && (
+                              <a href={r.permalinkUrl} target="_blank" rel="noopener noreferrer" title="Open in Asana" className="text-[#9aa0a6] hover:text-[#e8eaed]">
+                                <ExternalLink className="size-3.5" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => handleUntrack(r.taskGid, r.name)}
+                              disabled={untrack.isPending}
+                              title="Stop tracking (keeps the task in Asana)"
+                              className="text-[#9aa0a6] hover:text-red-300"
+                            >
+                              <Unlink className="size-3.5" />
+                            </button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

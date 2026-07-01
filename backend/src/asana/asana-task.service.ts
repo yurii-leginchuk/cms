@@ -149,4 +149,123 @@ export class AsanaTaskService {
 
     return { task, subtasks };
   }
+
+  // ── Phase 2: writes ─────────────────────────────────────────────────────────
+
+  /** Load a tracked mirror row or throw — writes only apply to tracked tasks. */
+  private async requireTracked(siteId: string, taskGid: string): Promise<AsanaTask> {
+    const row = await this.taskRepo.findOne({ where: { siteId, taskGid } });
+    if (!row) throw new NotFoundException('This task is not tracked by the CMS.');
+    return row;
+  }
+
+  /** Stop tracking a task in the CMS (removes the mirror row; does NOT touch Asana). */
+  async untrack(siteId: string, taskGid: string): Promise<{ untracked: true; taskGid: string }> {
+    const row = await this.requireTracked(siteId, taskGid);
+    await this.taskRepo.delete({ id: row.id });
+    return { untracked: true, taskGid };
+  }
+
+  /** Create a task in the site's mapped project (origin `cms`). */
+  async createTask(
+    siteId: string,
+    dto: {
+      name: string;
+      notes?: string;
+      assigneeGid?: string;
+      dueOn?: string;
+      sectionGid?: string;
+    },
+  ): Promise<AsanaTask> {
+    const map = await this.projects.requireProject(siteId);
+    const token = await this.connection.getToken();
+    let raw = await this.api.createTask(token, {
+      projectGid: map.projectGid!,
+      name: dto.name,
+      notes: dto.notes,
+      assigneeGid: dto.assigneeGid,
+      dueOn: dto.dueOn,
+    });
+    if (dto.sectionGid) {
+      await this.api.addTaskToSection(token, dto.sectionGid, raw.gid);
+      raw = await this.api.getTask(token, raw.gid);
+    }
+    return this.sync.upsertTracked(raw, siteId, map.projectGid!, 'cms');
+  }
+
+  /** Update a tracked task's name/notes/due/completed. */
+  async updateTask(
+    siteId: string,
+    taskGid: string,
+    dto: { name?: string; notes?: string; dueOn?: string | null; completed?: boolean },
+  ): Promise<AsanaTask> {
+    const row = await this.requireTracked(siteId, taskGid);
+    const token = await this.connection.getToken();
+    const raw = await this.api.updateTask(token, taskGid, dto);
+    return this.sync.upsertTracked(raw, siteId, row.projectGid, row.origin);
+  }
+
+  /** Move a tracked task to a section (status), optionally toggling completed. */
+  async setStatus(
+    siteId: string,
+    taskGid: string,
+    dto: { sectionGid: string; completed?: boolean },
+  ): Promise<AsanaTask> {
+    const row = await this.requireTracked(siteId, taskGid);
+    const token = await this.connection.getToken();
+    if (dto.completed !== undefined) {
+      await this.api.updateTask(token, taskGid, { completed: dto.completed });
+    }
+    await this.api.addTaskToSection(token, dto.sectionGid, taskGid);
+    const raw = await this.api.getTask(token, taskGid);
+    return this.sync.upsertTracked(raw, siteId, row.projectGid, row.origin);
+  }
+
+  /** Set or clear a tracked task's assignee. */
+  async setAssignee(
+    siteId: string,
+    taskGid: string,
+    assigneeGid: string | null,
+  ): Promise<AsanaTask> {
+    const row = await this.requireTracked(siteId, taskGid);
+    const token = await this.connection.getToken();
+    const raw = await this.api.updateTask(token, taskGid, { assigneeGid });
+    return this.sync.upsertTracked(raw, siteId, row.projectGid, row.origin);
+  }
+
+  /**
+   * Create a subtask under a tracked task. Subtasks aren't mirrored, so we return
+   * the refreshed parent (its numSubtasks) plus a transient view of the subtask.
+   */
+  async createSubtask(
+    siteId: string,
+    parentGid: string,
+    dto: { name: string; notes?: string; assigneeGid?: string; dueOn?: string },
+  ): Promise<{ parent: AsanaTask; subtask: AsanaTask }> {
+    const row = await this.requireTracked(siteId, parentGid);
+    const token = await this.connection.getToken();
+    const subRaw = await this.api.createSubtask(token, parentGid, dto);
+    const parentRaw = await this.api.getTask(token, parentGid);
+    const parent = await this.sync.upsertTracked(parentRaw, siteId, row.projectGid, row.origin);
+    const subtask = this.taskRepo.create({
+      ...mapTaskToMirror(subRaw, siteId, row.projectGid),
+      origin: 'asana',
+    });
+    return { parent, subtask };
+  }
+
+  /** Link (or unlink, with nulls) a tracked task to a CMS entity. CMS-only. */
+  async linkEntity(
+    siteId: string,
+    taskGid: string,
+    dto: { entityType: string | null; entityId: string | null },
+  ): Promise<AsanaTask> {
+    const row = await this.requireTracked(siteId, taskGid);
+    if ((dto.entityType === null) !== (dto.entityId === null)) {
+      throw new BadRequestException('Provide both entityType and entityId, or null for both.');
+    }
+    row.linkedEntityType = dto.entityType;
+    row.linkedEntityId = dto.entityId;
+    return this.taskRepo.save(row);
+  }
 }

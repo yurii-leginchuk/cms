@@ -6,6 +6,7 @@ import {
   deriveSection,
   mapTaskToMirror,
   parseAsanaTaskGid,
+  buildTaskData,
   type AsanaPage,
   type AsanaTaskRaw,
 } from './asana-helpers';
@@ -106,6 +107,30 @@ describe('deriveSection', () => {
   it('returns null when there are no sections', () => {
     expect(deriveSection([], 'p1')).toBeNull();
     expect(deriveSection(undefined, 'p1')).toBeNull();
+  });
+});
+
+describe('buildTaskData', () => {
+  it('includes only provided fields, mapped to Asana names', () => {
+    expect(buildTaskData({ name: 'Fix', dueOn: '2026-07-10' })).toEqual({
+      name: 'Fix',
+      due_on: '2026-07-10',
+    });
+  });
+  it('passes null through for due_on/assignee (clear/unassign)', () => {
+    expect(buildTaskData({ dueOn: null, assigneeGid: null })).toEqual({
+      due_on: null,
+      assignee: null,
+    });
+  });
+  it('maps completed + assignee gid', () => {
+    expect(buildTaskData({ completed: true, assigneeGid: 'u1' })).toEqual({
+      completed: true,
+      assignee: 'u1',
+    });
+  });
+  it('returns an empty object when nothing is provided', () => {
+    expect(buildTaskData({})).toEqual({});
   });
 });
 

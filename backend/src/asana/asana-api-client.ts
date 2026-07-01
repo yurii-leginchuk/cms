@@ -5,8 +5,10 @@ import {
   nextBackoffMs,
   mapAsanaError,
   collectPaginated,
+  buildTaskData,
   type AsanaPage,
   type AsanaTaskRaw,
+  type TaskWriteInput,
 } from './asana-helpers';
 
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
@@ -171,6 +173,53 @@ export class AsanaApiClient {
   listSubtasks(token: string, taskGid: string): Promise<AsanaTaskRaw[]> {
     return this.getList<AsanaTaskRaw>(token, `/tasks/${taskGid}/subtasks`, {
       opt_fields: TASK_FIELDS,
+    });
+  }
+
+  // ── Tasks (write) ───────────────────────────────────────────────────────────
+  // Asana write bodies are wrapped in `{ data: {...} }`; responses come back as
+  // `{ data: task }`. opt_fields (as a query param) hydrates the returned task.
+
+  private async writeTask(
+    token: string,
+    method: Method,
+    path: string,
+    data: Record<string, unknown>,
+  ): Promise<AsanaTaskRaw> {
+    const env = await this.raw<{ data: AsanaTaskRaw }>(token, method, path, {
+      params: { opt_fields: TASK_FIELDS },
+      data: { data },
+    });
+    return env.data;
+  }
+
+  createTask(
+    token: string,
+    input: TaskWriteInput & { projectGid: string },
+  ): Promise<AsanaTaskRaw> {
+    const { projectGid, ...fields } = input;
+    return this.writeTask(token, 'POST', '/tasks', {
+      ...buildTaskData(fields),
+      projects: [projectGid],
+    });
+  }
+
+  updateTask(token: string, taskGid: string, input: TaskWriteInput): Promise<AsanaTaskRaw> {
+    return this.writeTask(token, 'PUT', `/tasks/${taskGid}`, buildTaskData(input));
+  }
+
+  createSubtask(
+    token: string,
+    parentGid: string,
+    input: TaskWriteInput,
+  ): Promise<AsanaTaskRaw> {
+    return this.writeTask(token, 'POST', `/tasks/${parentGid}/subtasks`, buildTaskData(input));
+  }
+
+  /** Move a task into a section (this is how "set status" works). */
+  async addTaskToSection(token: string, sectionGid: string, taskGid: string): Promise<void> {
+    await this.raw(token, 'POST', `/sections/${sectionGid}/addTask`, {
+      data: { data: { task: taskGid } },
     });
   }
 }

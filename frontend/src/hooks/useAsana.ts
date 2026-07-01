@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { asanaApi, type ListTasksParams } from '@/api/asana'
+import { asanaApi, type ListTasksParams, type CreateTaskInput, type UpdateTaskInput } from '@/api/asana'
 
 // ── Global connection ─────────────────────────────────────────────────────────
 
@@ -46,6 +46,14 @@ export function useAsanaProjects(enabled: boolean) {
   return useQuery({
     queryKey: ['asana-projects'],
     queryFn: () => asanaApi.projects(),
+    enabled,
+  })
+}
+
+export function useAsanaUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: ['asana-users'],
+    queryFn: () => asanaApi.users(),
     enabled,
   })
 }
@@ -112,5 +120,76 @@ export function useTrackAsanaTask(siteId: string) {
   return useMutation({
     mutationFn: (url: string) => asanaApi.track(siteId, url),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['asana-tasks', siteId] }),
+  })
+}
+
+// ── Phase 2 write mutations ───────────────────────────────────────────────────
+
+function useTaskInvalidator(siteId: string) {
+  const qc = useQueryClient()
+  return (taskGid?: string) => {
+    qc.invalidateQueries({ queryKey: ['asana-tasks', siteId] })
+    if (taskGid) qc.invalidateQueries({ queryKey: ['asana-task', siteId, taskGid] })
+  }
+}
+
+export function useCreateAsanaTask(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (input: CreateTaskInput) => asanaApi.createTask(siteId, input),
+    onSuccess: () => invalidate(),
+  })
+}
+
+export function useUpdateAsanaTask(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; input: UpdateTaskInput }) =>
+      asanaApi.updateTask(siteId, vars.taskGid, vars.input),
+    onSuccess: (_d, vars) => invalidate(vars.taskGid),
+  })
+}
+
+export function useUntrackAsanaTask(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (taskGid: string) => asanaApi.untrack(siteId, taskGid),
+    onSuccess: (_d, taskGid) => invalidate(taskGid),
+  })
+}
+
+export function useSetAsanaStatus(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; sectionGid: string; completed?: boolean }) =>
+      asanaApi.setStatus(siteId, vars.taskGid, vars.sectionGid, vars.completed),
+    onSuccess: (_d, vars) => invalidate(vars.taskGid),
+  })
+}
+
+export function useSetAsanaAssignee(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; assigneeGid: string | null }) =>
+      asanaApi.setAssignee(siteId, vars.taskGid, vars.assigneeGid),
+    onSuccess: (_d, vars) => invalidate(vars.taskGid),
+  })
+}
+
+export function useCreateAsanaSubtask(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; input: CreateTaskInput }) =>
+      asanaApi.createSubtask(siteId, vars.taskGid, vars.input),
+    onSuccess: (_d, vars) => invalidate(vars.taskGid),
+  })
+}
+
+export function useLinkAsanaTask(siteId: string) {
+  const invalidate = useTaskInvalidator(siteId)
+  return useMutation({
+    mutationFn: (vars: { taskGid: string; entityType: string | null; entityId: string | null }) =>
+      asanaApi.linkTask(siteId, vars.taskGid, vars.entityType, vars.entityId),
+    onSuccess: (_d, vars) => invalidate(vars.taskGid),
   })
 }

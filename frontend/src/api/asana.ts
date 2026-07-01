@@ -76,6 +76,26 @@ export interface SyncResult {
   syncedAt: string
 }
 
+export interface CreateTaskInput {
+  name: string
+  notes?: string
+  assigneeGid?: string
+  dueOn?: string
+  sectionGid?: string
+}
+
+export interface UpdateTaskInput {
+  name?: string
+  notes?: string
+  dueOn?: string | null
+  completed?: boolean
+}
+
+export interface SubtaskResult {
+  parent: AsanaTask
+  subtask: AsanaTask
+}
+
 export interface ListTasksParams {
   page?: number
   limit?: number
@@ -128,4 +148,20 @@ export const asanaApi = {
     unwrap<TaskDetail>(apiClient.get(`${SITE(siteId)}/tasks/${taskGid}`)),
   track: (siteId: string, url: string) =>
     unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/track`, { url })),
+
+  // ── Phase 2 writes ────────────────────────────────────────────────────────
+  createTask: (siteId: string, input: CreateTaskInput) =>
+    unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks`, input)),
+  updateTask: (siteId: string, taskGid: string, input: UpdateTaskInput) =>
+    unwrap<AsanaTask>(apiClient.patch(`${SITE(siteId)}/tasks/${taskGid}`, input)),
+  untrack: (siteId: string, taskGid: string) =>
+    unwrap<{ untracked: true; taskGid: string }>(apiClient.delete(`${SITE(siteId)}/tasks/${taskGid}`)),
+  setStatus: (siteId: string, taskGid: string, sectionGid: string, completed?: boolean) =>
+    unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/status`, { sectionGid, completed })),
+  setAssignee: (siteId: string, taskGid: string, assigneeGid: string | null) =>
+    unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/assignee`, { assigneeGid })),
+  createSubtask: (siteId: string, taskGid: string, input: CreateTaskInput) =>
+    unwrap<SubtaskResult>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/subtasks`, input)),
+  linkTask: (siteId: string, taskGid: string, entityType: string | null, entityId: string | null) =>
+    unwrap<AsanaTask>(apiClient.post(`${SITE(siteId)}/tasks/${taskGid}/link`, { entityType, entityId })),
 }

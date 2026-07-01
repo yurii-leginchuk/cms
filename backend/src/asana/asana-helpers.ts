@@ -128,6 +128,31 @@ export interface AsanaTaskRaw {
   memberships?: AsanaMembership[];
 }
 
+/** Fields the CMS can write to an Asana task (our names). */
+export interface TaskWriteInput {
+  name?: string;
+  notes?: string;
+  dueOn?: string | null;
+  completed?: boolean;
+  assigneeGid?: string | null;
+}
+
+/**
+ * Map a write input onto Asana's task `data` payload, including ONLY the fields
+ * the caller provided (PUT semantics — omitted = leave as-is). `null` is a
+ * meaningful value for `due_on`/`assignee` (clears / unassigns), so it passes
+ * through; only `undefined` is skipped. Pure.
+ */
+export function buildTaskData(input: TaskWriteInput): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  if (input.name !== undefined) data.name = input.name;
+  if (input.notes !== undefined) data.notes = input.notes;
+  if (input.dueOn !== undefined) data.due_on = input.dueOn;
+  if (input.completed !== undefined) data.completed = input.completed;
+  if (input.assigneeGid !== undefined) data.assignee = input.assigneeGid;
+  return data;
+}
+
 /**
  * The task's "status" is the board section it sits in. A task can belong to
  * several projects; pick the section from the membership matching OUR project,

@@ -3,6 +3,8 @@ import {
   Get,
   Put,
   Post,
+  Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -14,10 +16,17 @@ import { AsanaSyncService } from './asana-sync.service';
 import { AsanaTaskService } from './asana-task.service';
 import { SetMappingDto } from './dto/set-mapping.dto';
 import { TrackTaskDto } from './dto/track-task.dto';
+import { CreateTaskDto } from './dto/create-task.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
+import { SetStatusDto } from './dto/set-status.dto';
+import { SetAssigneeDto } from './dto/set-assignee.dto';
+import { CreateSubtaskDto } from './dto/create-subtask.dto';
+import { LinkEntityDto } from './dto/link-entity.dto';
 
 /**
- * Per-site Asana endpoints (mapping, sections, sync, task reads). Phase 1 is
- * read-only for tasks; writes + webhooks arrive in later phases.
+ * Per-site Asana endpoints: mapping, sections, sync, task reads (Phase 1) and
+ * task writes — create/update/status/assignee/subtasks/link + untrack (Phase 2).
+ * Webhooks + gated MCP arrive in Phase 3.
  */
 @Controller('sites/:siteId/asana')
 export class AsanaSiteController {
@@ -82,9 +91,76 @@ export class AsanaSiteController {
     return this.tasks.trackByUrl(siteId, dto.url);
   }
 
+  /** Create a task in the site's mapped project. */
+  @Post('tasks')
+  @HttpCode(HttpStatus.OK)
+  createTask(@Param('siteId') siteId: string, @Body() dto: CreateTaskDto) {
+    return this.tasks.createTask(siteId, dto);
+  }
+
   /** Task detail (+ subtasks), hydrated live from Asana. */
   @Get('tasks/:taskGid')
   getTask(@Param('siteId') siteId: string, @Param('taskGid') taskGid: string) {
     return this.tasks.getDetail(siteId, taskGid);
+  }
+
+  /** Update name/notes/due/completed on a tracked task. */
+  @Patch('tasks/:taskGid')
+  updateTask(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: UpdateTaskDto,
+  ) {
+    return this.tasks.updateTask(siteId, taskGid, dto);
+  }
+
+  /** Stop tracking a task in the CMS (does NOT delete it in Asana). */
+  @Delete('tasks/:taskGid')
+  untrackTask(@Param('siteId') siteId: string, @Param('taskGid') taskGid: string) {
+    return this.tasks.untrack(siteId, taskGid);
+  }
+
+  /** Move a task to a section (status), optionally toggling completed. */
+  @Post('tasks/:taskGid/status')
+  @HttpCode(HttpStatus.OK)
+  setStatus(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: SetStatusDto,
+  ) {
+    return this.tasks.setStatus(siteId, taskGid, dto);
+  }
+
+  /** Set or clear a task's assignee. */
+  @Post('tasks/:taskGid/assignee')
+  @HttpCode(HttpStatus.OK)
+  setAssignee(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: SetAssigneeDto,
+  ) {
+    return this.tasks.setAssignee(siteId, taskGid, dto.assigneeGid);
+  }
+
+  /** Create a subtask under a tracked task. */
+  @Post('tasks/:taskGid/subtasks')
+  @HttpCode(HttpStatus.OK)
+  createSubtask(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: CreateSubtaskDto,
+  ) {
+    return this.tasks.createSubtask(siteId, taskGid, dto);
+  }
+
+  /** Link (or unlink, with nulls) a task to a CMS entity. */
+  @Post('tasks/:taskGid/link')
+  @HttpCode(HttpStatus.OK)
+  linkEntity(
+    @Param('siteId') siteId: string,
+    @Param('taskGid') taskGid: string,
+    @Body() dto: LinkEntityDto,
+  ) {
+    return this.tasks.linkEntity(siteId, taskGid, dto);
   }
 }

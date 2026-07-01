@@ -489,12 +489,21 @@ frontend typecheck clean.** Live run pending a real Asana PAT.
 - Tests: pagination-collect + backoff pure helpers; PAT encrypt + **redaction**
   (never leaks token); sync upsert/idempotency; section→status mapping.
 
-### Phase 2 — Create / Update / Subtasks / Link
-- Write ops in `AsanaTaskService` (create, update, set status/section, set assignee,
-  subtasks) with optimistic mirror + reconcile; **CMS-entity link** column + endpoint;
-  frontend create/edit flows + detail drawer.
-- Tests: create/update payload mapping (only-provided-fields → PUT semantics);
-  section move; assignee set; link/unlink; optimistic-then-reconcile.
+### Phase 2 — Create / Update / Subtasks / Link — ✅ BUILT (2026-07-01, branch `feat/asana-integration`)
+Delivered: write ops in `AsanaTaskService` (create → origin `cms`; update
+name/notes/due/completed; set status = section move + optional completed; set
+assignee; create subtask; link/unlink CMS entity) writing live to Asana then
+upserting the mirror; **untrack** (`DELETE …/tasks/:gid` — removes the mirror row,
+does NOT touch Asana). REST: `POST tasks`, `PATCH tasks/:gid`, `DELETE tasks/:gid`,
+`POST tasks/:gid/{status,assignee,subtasks,link}`. Pure `buildTaskData` (only-provided
+fields → Asana names, null passes through) unit-tested. Frontend: "+ New task" create
+form + row "stop tracking" on `SiteTasksPage`; fully **editable `TaskDetailPage`**
+(inline name, completed toggle, status/assignee selects, due date, notes save,
+add-subtask, link/unlink, stop tracking). **381 backend tests green; both builds +
+FE typecheck clean; verified live** on the "PA CMS Test" project (create→assign→
+section→update→subtask→link→complete→untrack all confirmed, UI screenshot verified).
+NOTE: writes here are the DIRECT UI path; MCP writes stay GATED (Phase 3). Optimistic
+mirror + rollback was deferred (writes re-fetch via React Query invalidation instead).
 
 ### Phase 3 — Webhooks + MCP
 - Webhook controller (`@Public()`, raw-body), handshake echo, **HMAC verify**
