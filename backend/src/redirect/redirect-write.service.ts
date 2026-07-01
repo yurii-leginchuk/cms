@@ -337,6 +337,11 @@ export class RedirectWriteService {
         const item = await this.requireItem(site.id, req.targetId);
         if (item.pluginId == null) throw new BadRequestException('Redirect has no plugin id.');
         const res = await this.wp.deleteRedirect(site, item.pluginId);
+        if (!res.ok) {
+          // WP reported the delete failed — do NOT tombstone a redirect that is
+          // still live. Throw so the gate keeps the change pending and retries.
+          throw new BadRequestException('WordPress rejected the redirect delete.');
+        }
         // Tombstone locally (it's gone from WP now).
         item.deletedInWpAt = now;
         item.driftState = 'deleted_in_wp';

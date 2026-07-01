@@ -13,6 +13,7 @@ const mockSite: Site = {
   sitemapUrl: 'https://example.com/sitemap.xml',
   favicon: null,
   wpApiKey: null,
+  hostedOnWpEngine: false,
   status: SiteStatus.IDLE,
   embeddingStatus: EmbeddingStatus.IDLE,
   pagesTotal: 0,

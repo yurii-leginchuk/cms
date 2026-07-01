@@ -189,19 +189,34 @@ export class AgentService {
       order: { createdAt: 'ASC' },
     });
 
-    // Session summarization: compress old messages when session grows long
+    // Session summarization: compress old messages when the session grows long.
+    // INCREMENTAL — only messages not yet folded into the stored summary are
+    // summarized (merged into it), so a long session pays one small call per
+    // turn instead of re-summarizing its entire history every message.
     let contextSummary = session.contextSummary ?? '';
     let contextMessages = existingMessages;
 
     if (existingMessages.length > SUMMARIZE_THRESHOLD) {
-      const toSummarize = existingMessages.slice(0, existingMessages.length - KEEP_RECENT);
-      const recent = existingMessages.slice(-KEEP_RECENT);
-      const newSummary = await this.embeddingService.summarizeMessages(toSummarize, apiKey);
-      if (newSummary) {
-        contextSummary = newSummary;
-        await this.sessionRepo.update(sessionId, { contextSummary: newSummary });
+      const cutoff = existingMessages.length - KEEP_RECENT;
+      const alreadySummarized = Math.min(
+        Math.max(0, session.summarizedCount ?? 0),
+        cutoff,
+      );
+      const newToSummarize = existingMessages.slice(alreadySummarized, cutoff);
+      if (newToSummarize.length > 0) {
+        const newSummary = await this.embeddingService.summarizeMessages(
+          newToSummarize,
+          contextSummary || null,
+        );
+        if (newSummary) {
+          contextSummary = newSummary;
+          await this.sessionRepo.update(sessionId, {
+            contextSummary: newSummary,
+            summarizedCount: cutoff,
+          });
+        }
       }
-      contextMessages = recent;
+      contextMessages = existingMessages.slice(-KEEP_RECENT);
     }
 
     // Save user message to DB

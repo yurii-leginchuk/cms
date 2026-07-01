@@ -10,7 +10,7 @@ import { SchemaSyncService } from './schema-sync.service';
 
 const mockPageRepo = { find: jest.fn(), findOne: jest.fn() };
 const mockSiteRepo = { findOne: jest.fn() };
-const mockManagedRepo = { find: jest.fn() };
+const mockManagedRepo = { find: jest.fn(), update: jest.fn(), delete: jest.fn() };
 const mockHistoryRepo = { save: jest.fn(), create: jest.fn() };
 const mockSchemaService = { reparse: jest.fn() };
 
@@ -148,6 +148,67 @@ describe('SchemaSyncService — site-level', () => {
       expect(result.failed).toBe(1);
       expect(result.perPage).toHaveLength(2);
       expect(result.perPage[1].error).toBe('boom');
+    });
+  });
+
+  describe('publishSingle (targeted gate publish)', () => {
+    const setup = (rows: Partial<PageSchema>[]) => {
+      mockSiteRepo.findOne.mockResolvedValue({ id: 'site-1', wpApiKey: 'k', url: 'https://x.com' });
+      mockPageRepo.findOne.mockResolvedValue({ id: 'p1', url: 'https://x.com/a' });
+      mockManagedRepo.find.mockResolvedValue(rows);
+      mockHistoryRepo.create.mockImplementation((r: unknown) => r);
+      mockSchemaService.reparse.mockResolvedValue({});
+      return jest
+        .spyOn(service as any, 'pushSetPayload')
+        .mockResolvedValue(undefined);
+    };
+
+    it('pushes the target row but keeps another pending draft OFF the page (its live baseline is null)', async () => {
+      const push = setup([
+        // the accepted change
+        { id: 'target', type: 'FAQPage', status: PageSchemaStatus.MODIFIED, jsonld: { '@type': 'FAQPage' }, publishedJsonld: null },
+        // someone else's never-published draft — must NOT leak onto the page
+        { id: 'draft', type: 'Service', status: PageSchemaStatus.MODIFIED, jsonld: { '@type': 'Service' }, publishedJsonld: null },
+        // a clean synced row rides along as-is
+        { id: 'live', type: 'Organization', status: PageSchemaStatus.SYNCED, jsonld: { '@type': 'Organization' }, publishedJsonld: { '@type': 'Organization' } },
+      ]);
+
+      await service.publishSingle('site-1', 'p1', 'target');
+
+      const payload = push.mock.calls[0][2] as { type: string; jsonld: unknown }[];
+      expect(payload.map((p) => p.type).sort()).toEqual(['FAQPage', 'Organization']);
+      // only the target flips to synced
+      expect(mockManagedRepo.update).toHaveBeenCalledWith(
+        { id: 'target' },
+        expect.objectContaining({ status: PageSchemaStatus.SYNCED, publishedJsonld: { '@type': 'FAQPage' } }),
+      );
+      expect(mockManagedRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('pushes another PENDING EDIT at its live baseline, not its draft', async () => {
+      const push = setup([
+        { id: 'target', type: 'FAQPage', status: PageSchemaStatus.MODIFIED, jsonld: { '@type': 'FAQPage', v: 2 }, publishedJsonld: null },
+        // edited elsewhere: draft says v2 but live page serves v1 — keep v1
+        { id: 'edited', type: 'Service', status: PageSchemaStatus.MODIFIED, jsonld: { '@type': 'Service', v: 2 }, publishedJsonld: { '@type': 'Service', v: 1 } },
+      ]);
+
+      await service.publishSingle('site-1', 'p1', 'target');
+
+      const payload = push.mock.calls[0][2] as { type: string; jsonld: { v?: number } }[];
+      const edited = payload.find((p) => p.type === 'Service');
+      expect(edited?.jsonld).toEqual({ '@type': 'Service', v: 1 });
+    });
+
+    it('a targeted REMOVE excludes the row from the set and hard-deletes it after the push', async () => {
+      setup([
+        { id: 'target', type: 'FAQPage', status: PageSchemaStatus.REMOVED, jsonld: { '@type': 'FAQPage' }, publishedJsonld: { '@type': 'FAQPage' } },
+        { id: 'live', type: 'Organization', status: PageSchemaStatus.SYNCED, jsonld: { '@type': 'Organization' }, publishedJsonld: { '@type': 'Organization' } },
+      ]);
+
+      await service.publishSingle('site-1', 'p1', 'target');
+
+      expect(mockManagedRepo.delete).toHaveBeenCalledWith({ id: 'target' });
+      expect(mockManagedRepo.update).not.toHaveBeenCalled();
     });
   });
 });

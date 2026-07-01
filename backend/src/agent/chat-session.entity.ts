@@ -29,6 +29,14 @@ export class ChatSession {
   @Column({ type: 'text', nullable: true })
   contextSummary: string | null;
 
+  /**
+   * How many of the session's oldest messages are already folded into
+   * `contextSummary`. Lets each turn summarize only the NEW overflow instead of
+   * re-summarizing the whole history every message past the threshold.
+   */
+  @Column({ type: 'int', default: 0 })
+  summarizedCount: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

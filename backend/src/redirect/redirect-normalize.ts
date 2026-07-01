@@ -223,12 +223,32 @@ export function normalizeRedirect(r: RawRedirect): NormalizedRedirect {
 }
 
 /**
- * Whole-set hash — a cheap "did ANYTHING change since the last poll?" gate. The
- * per-item fingerprints are sorted (so plugin re-ordering alone doesn't churn it)
- * and hashed together. Equal to the previous run's hash ⇒ we can short-circuit
- * the per-item diff entirely.
+ * Per-item key for the whole-set "did ANYTHING change?" gate. The identity
+ * fingerprint alone is NOT enough here: it deliberately excludes `enabled`,
+ * `title`, `position` and the hit counters, so a WP-side toggle (or a redirect
+ * starting to receive hits) would short-circuit forever and the mirrored
+ * projection — including `wpLastAccess`, which the audit's "disable dead
+ * redirects" judgment reads — would go silently stale. The projection key covers
+ * everything the projection row mirrors.
  */
-export function computeWholeSetHash(fingerprints: string[]): string {
-  const sorted = [...fingerprints].sort();
+export function projectionKey(n: NormalizedRedirect): string {
+  return [
+    n.fingerprint,
+    n.enabled ? 1 : 0,
+    n.title ?? '',
+    n.position,
+    n.wpLastCount,
+    n.wpLastAccess ? n.wpLastAccess.getTime() : 0,
+  ].join('|');
+}
+
+/**
+ * Whole-set hash — a cheap "did ANYTHING change since the last poll?" gate. The
+ * per-item projection keys are sorted (so plugin re-ordering of the fetch alone
+ * doesn't churn it) and hashed together. Equal to the previous run's hash ⇒ we
+ * can short-circuit the per-item diff entirely.
+ */
+export function computeWholeSetHash(keys: string[]): string {
+  const sorted = [...keys].sort();
   return crypto.createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }

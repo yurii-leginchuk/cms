@@ -85,6 +85,7 @@ export class CdnPublishService {
     const rowById = new Map(rows.map((r) => [r.imageId, r]));
 
     const mappings: { wpAttachmentId: number; cdnUrl: string }[] = [];
+    const removals: number[] = [];
     let failedHead = 0;
     const now = new Date();
 
@@ -97,14 +98,18 @@ export class CdnPublishService {
         row.rewriteVerifiedAt = now;
         mappings.push({ wpAttachmentId: c.wpAttachmentId, cdnUrl });
       } else {
+        // Lost verification → also REVOKE the mapping in the plugin, otherwise
+        // WP keeps rewriting this attachment to a dead CDN URL (the plugin map
+        // is upsert-only and nothing else removes entries).
+        if (row.rewriteLive) removals.push(c.wpAttachmentId);
         row.rewriteLive = false;
         failedHead++;
       }
       await this.optRepo.save(row);
     }
 
-    if (mappings.length) {
-      await this.pushMap(site, mappings);
+    if (mappings.length || removals.length) {
+      await this.pushMap(site, mappings, removals);
     }
 
     this.logger.log(
@@ -119,15 +124,16 @@ export class CdnPublishService {
     };
   }
 
-  /** Push the verified {wpAttachmentId -> cdnUrl} batch to the plugin. */
+  /** Push the verified {wpAttachmentId -> cdnUrl} batch (+ revocations) to the plugin. */
   async pushMap(
     site: Site,
     mappings: { wpAttachmentId: number; cdnUrl: string }[],
+    remove: number[] = [],
   ): Promise<void> {
     try {
       await axios.post(
         `${site.url}/wp-json/poirier-cms/v1/cdn-map`,
-        { mappings },
+        { mappings, ...(remove.length ? { remove } : {}) },
         {
           timeout: 15_000,
           headers: {
@@ -159,8 +165,17 @@ export class CdnPublishService {
     const cdnUrl = buildCdnUrl(config.cdnDomain, row.r2Key);
     const ok = await this.headOk(cdnUrl);
     if (!ok) {
+      const wasLive = row.rewriteLive;
       row.rewriteLive = false;
       await this.optRepo.save(row);
+      // Revoke a previously-live mapping so WP falls back to the original URL.
+      if (wasLive) {
+        try {
+          await this.pushMap(site, [], [wpAttachmentId]);
+        } catch (err) {
+          this.logger.warn(`CDN map revoke failed: ${(err as Error).message}`);
+        }
+      }
       return false;
     }
     row.rewriteLive = true;

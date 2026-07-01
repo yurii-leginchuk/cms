@@ -110,12 +110,17 @@ export class CrawlScanService {
         } catch (err) {
           if (err instanceof GscQuotaExceededError) {
             // Google says we're out even though the ledger had budget (shared
-            // usage). Release the untouched reservations and stop.
+            // usage). Release the untouched reservations and stop. The 429'd
+            // attempt itself spent nothing, so it counts as unused too.
             await this.quota.release(property, remainingReserved);
             skippedMidRun = remainingReserved;
             this.logger.warn(`Quota exhausted mid-scan for ${property}; stopping`);
             break;
           }
+          // The inspection was ATTEMPTED (and may well have been billed) — it
+          // must consume its reservation, or a later quota-exceeded release
+          // would hand back budget that was actually spent.
+          remainingReserved -= 1;
           errored += 1;
           errorBreakdown.other = (errorBreakdown.other ?? 0) + 1;
         }
@@ -193,6 +198,8 @@ export class CrawlScanService {
           await this.quota.release(property, remainingReserved);
           break;
         }
+        // Attempted (possibly billed) → consumes its reservation; see nightly loop.
+        remainingReserved -= 1;
         errored += 1;
         results.push({ pageId: p.id, url: p.url, ok: false, error: (err as Error).message });
       }
@@ -217,6 +224,8 @@ export class CrawlScanService {
   /**
    * Prioritized rotation from the `pages` inventory joined to current status:
    * money pages first, then never-inspected (NULLS FIRST), then oldest freshness.
+   * Pages tombstoned out of the sitemap are excluded — the quota belongs to
+   * pages that still exist (on-demand inspection of a tombstone still works).
    */
   private async selectPages(siteId: string, limit: number): Promise<Candidate[]> {
     const rows = await this.pageRepo
@@ -224,6 +233,7 @@ export class CrawlScanService {
       .leftJoin('crawl_page_status', 'cps', 'cps."pageId" = p.id')
       .select(['p.id AS "pageId"', 'p.url AS url'])
       .where('p.siteId = :siteId', { siteId })
+      .andWhere('p."missingFromSitemapAt" IS NULL')
       .orderBy('p."isTransactional"', 'DESC')
       .addOrderBy('(cps."lastInspectedAt" IS NULL)', 'DESC')
       .addOrderBy('cps."lastInspectedAt"', 'ASC', 'NULLS FIRST')

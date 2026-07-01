@@ -377,14 +377,26 @@ export class EmbeddingService implements OnModuleInit {
     }));
   }
 
-  // Summarize old messages for session context compression
+  /**
+   * Summarize old messages for session context compression. INCREMENTAL: when a
+   * previous summary is passed, only the NEW overflow messages ride along and
+   * the model merges them into an updated summary — so cost stays flat instead
+   * of growing with the whole history every turn. Fetches the OpenAI key itself
+   * (the agent may be running on an Anthropic key, which this endpoint can't use).
+   */
   async summarizeMessages(
     messages: { role: string; content: string | null }[],
-    apiKey: string,
+    prevSummary?: string | null,
   ): Promise<string> {
+    const apiKey = await this.settingsService.getRaw('openai_api_key');
+    if (!apiKey) return '';
+
     const transcript = messages
       .map((m) => `${m.role.toUpperCase()}: ${(m.content ?? '').slice(0, 500)}`)
       .join('\n');
+    const userContent = prevSummary
+      ? `EXISTING SUMMARY (of the conversation so far):\n${prevSummary}\n\nNEW MESSAGES (continue the same conversation):\n${transcript}`
+      : transcript;
     try {
       const res = await axios.post(
         'https://api.openai.com/v1/chat/completions',
@@ -396,9 +408,9 @@ export class EmbeddingService implements OnModuleInit {
             {
               role: 'system',
               content:
-                'Summarize the following chat conversation briefly. Focus on: key facts established, page URLs discussed, decisions made, pending tasks. Be concise, use bullet points.',
+                'Summarize the chat conversation briefly. When an EXISTING SUMMARY is given, merge the NEW MESSAGES into it and return ONE updated summary. Focus on: key facts established, page URLs discussed, decisions made, pending tasks. Be concise, use bullet points.',
             },
-            { role: 'user', content: transcript },
+            { role: 'user', content: userContent },
           ],
         },
         { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 20000 },

@@ -172,10 +172,21 @@ class Poirier_Image {
 
 		// Fallback: rewrite inline <img alt> wherever this src appears in content.
 		$rewritten = self::rewrite_inline_alt( $candidates, $alt );
+		if ( $rewritten > 0 ) {
+			return new WP_REST_Response( [
+				'success'   => true,
+				'mode'      => 'inline',
+				'rewritten' => $rewritten,
+			], 200 );
+		}
+
+		// Honest failure: no attachment matched AND no inline occurrence was
+		// rewritten — the alt landed NOWHERE. Reporting success here would let
+		// the CMS mark the image synced while the site never changed.
 		return new WP_REST_Response( [
-			'success'   => true,
-			'mode'      => 'inline',
-			'rewritten' => $rewritten,
+			'success' => false,
+			'mode'    => 'unmatched',
+			'message' => 'No matching attachment or inline <img> found for this image URL.',
 		], 200 );
 	}
 

@@ -114,41 +114,27 @@ export class SchemaSyncService {
 
     const payload = liveRows.map((r) => ({ type: r.type, jsonld: r.jsonld }));
 
-    try {
-      await axios.post(
-        `${site.url}/wp-json/poirier-cms/v1/schema`,
-        { pageUrl: page.url, schemas: payload },
-        {
-          timeout: 15_000,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Poirier-API-Key': site.wpApiKey,
-          },
-        },
-      );
-    } catch (err) {
-      const msg = axios.isAxiosError(err)
-        ? `HTTP ${err.response?.status ?? 'no response'}: ${err.response?.data?.message ?? err.message}`
-        : (err as Error).message;
-      if (liveRows.length > 0) {
-        await this.managedRepo.update(
-          { id: In(liveRows.map((r) => r.id)) },
-          { publishError: msg },
-        );
-      }
-      throw new ServiceUnavailableException(`Schema apply failed: ${msg}`);
-    }
+    await this.pushSetPayload(
+      site,
+      page.url,
+      payload,
+      liveRows.map((r) => r.id),
+    );
 
     const now = new Date();
     if (liveRows.length > 0) {
-      await this.managedRepo.update(
-        { id: In(liveRows.map((r) => r.id)) },
-        {
-          status: PageSchemaStatus.SYNCED,
-          lastPublishedAt: now,
-          publishError: null,
-        },
-      );
+      // Per-row so publishedJsonld records EXACTLY what each row pushed.
+      for (const r of liveRows) {
+        await this.managedRepo.update(
+          { id: r.id },
+          {
+            status: PageSchemaStatus.SYNCED,
+            lastPublishedAt: now,
+            publishedJsonld: r.jsonld,
+            publishError: null,
+          },
+        );
+      }
     }
     if (removedIds.length > 0) {
       await this.managedRepo.delete({ id: In(removedIds) });
@@ -178,6 +164,100 @@ export class SchemaSyncService {
       );
     }
 
+    return { published: payload.length, at: now.toISOString(), reparsed };
+  }
+
+  /**
+   * TARGETED publish: apply exactly ONE pending row (the MCP gate's accept) while
+   * every OTHER pending row on the page stays pending. The plugin renders the
+   * full set per page, so the pushed payload is: synced rows as-is + the target's
+   * new state + other pending rows at their LIVE baseline (`publishedJsonld`).
+   * Never-published drafts are excluded — accepting one gated change must not
+   * leak someone's unapproved draft onto the live page.
+   */
+  async publishSingle(
+    siteId: string,
+    pageId: string,
+    schemaId: string,
+  ): Promise<PublishResult> {
+    const site = await this.siteRepo.findOne({ where: { id: siteId } });
+    if (!site) throw new NotFoundException('Site not found');
+    if (!site.wpApiKey) {
+      throw new BadRequestException(
+        'No WP API key configured for this site. Add it in site settings.',
+      );
+    }
+    const page = await this.pageRepo.findOne({ where: { id: pageId } });
+    if (!page) throw new NotFoundException('Page not found');
+
+    const allRows = await this.managedRepo.find({
+      where: { pageId },
+      order: { createdAt: 'ASC' },
+    });
+    const target = allRows.find((r) => r.id === schemaId);
+    if (!target) throw new NotFoundException('Managed schema not found');
+
+    const payload: { type: string; jsonld: unknown }[] = [];
+    for (const r of allRows) {
+      if (r.id === target.id) {
+        // The one change being applied: push its new state; a removal is
+        // simply excluded from the set.
+        if (r.status !== PageSchemaStatus.REMOVED) {
+          payload.push({ type: r.type, jsonld: r.jsonld });
+        }
+        continue;
+      }
+      if (r.status === PageSchemaStatus.SYNCED) {
+        payload.push({ type: r.type, jsonld: r.jsonld });
+      } else if (r.publishedJsonld != null) {
+        // Pending edit/removal elsewhere → keep serving its live baseline.
+        payload.push({ type: r.type, jsonld: r.publishedJsonld });
+      } else if (r.status === PageSchemaStatus.REMOVED) {
+        // Soft-removed row that predates the publishedJsonld column: it WAS
+        // live, and its jsonld is untouched by removal — keep serving it.
+        payload.push({ type: r.type, jsonld: r.jsonld });
+      }
+      // else: never-published draft → stays off the live page.
+    }
+
+    await this.pushSetPayload(site, page.url, payload, [target.id]);
+
+    const now = new Date();
+    if (target.status === PageSchemaStatus.REMOVED) {
+      await this.managedRepo.delete({ id: target.id });
+    } else {
+      await this.managedRepo.update(
+        { id: target.id },
+        {
+          status: PageSchemaStatus.SYNCED,
+          lastPublishedAt: now,
+          publishedJsonld: target.jsonld,
+          publishError: null,
+        },
+      );
+    }
+    await this.historyRepo.save(
+      this.historyRepo.create({
+        siteId,
+        pageId,
+        snapshot: payload,
+        count: payload.length,
+      }),
+    );
+
+    this.logger.log(
+      `Applied 1 targeted schema change to ${page.url} (${payload.length} in set)`,
+    );
+
+    let reparsed = false;
+    try {
+      await this.schemaService.reparse(pageId);
+      reparsed = true;
+    } catch (err) {
+      this.logger.warn(
+        `Post-publish re-parse failed for ${page.url}: ${(err as Error).message}`,
+      );
+    }
     return { published: payload.length, at: now.toISOString(), reparsed };
   }
 
@@ -352,12 +432,50 @@ export class SchemaSyncService {
       throw new ServiceUnavailableException(`Schema unpublish failed: ${msg}`);
     }
 
-    // Nothing is on the live page anymore → any synced row is now a pending change.
+    // Nothing is on the live page anymore → any synced row is now a pending
+    // change, and no row has a live baseline.
     await this.managedRepo.update(
       { pageId, status: PageSchemaStatus.SYNCED },
       { status: PageSchemaStatus.MODIFIED, lastPublishedAt: null },
     );
+    await this.managedRepo.update({ pageId }, { publishedJsonld: null });
     return { ok: true };
+  }
+
+  /**
+   * Shared WP push transport: send the page's full schema set to the plugin.
+   * On failure, records the scrubbed reason on `errorRowIds` and throws.
+   */
+  private async pushSetPayload(
+    site: Site,
+    pageUrl: string,
+    payload: { type: string; jsonld: unknown }[],
+    errorRowIds: string[],
+  ): Promise<void> {
+    try {
+      await axios.post(
+        `${site.url}/wp-json/poirier-cms/v1/schema`,
+        { pageUrl, schemas: payload },
+        {
+          timeout: 15_000,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Poirier-API-Key': site.wpApiKey,
+          },
+        },
+      );
+    } catch (err) {
+      const msg = axios.isAxiosError(err)
+        ? `HTTP ${err.response?.status ?? 'no response'}: ${err.response?.data?.message ?? err.message}`
+        : (err as Error).message;
+      if (errorRowIds.length > 0) {
+        await this.managedRepo.update(
+          { id: In(errorRowIds) },
+          { publishError: msg },
+        );
+      }
+      throw new ServiceUnavailableException(`Schema apply failed: ${msg}`);
+    }
   }
 
   getHistory(pageId: string): Promise<SchemaHistory[]> {

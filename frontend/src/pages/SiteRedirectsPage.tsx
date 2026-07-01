@@ -411,8 +411,10 @@ export default function SiteRedirectsPage() {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => checkLive(r)}
-                              disabled={resolveLive.isPending}
-                              title="Check live — follow the real HTTP redirect chain"
+                              disabled={resolveLive.isPending || r.regex}
+                              title={r.regex
+                                ? "Regex source is a pattern, not a URL — can't be live-checked"
+                                : 'Check live — follow the real HTTP redirect chain'}
                               className="size-7 rounded-md flex items-center justify-center text-[#9aa0a6] hover:text-[#4e8af4] hover:bg-white/5 disabled:opacity-40"
                             >
                               {resolveLive.isPending && resolveLive.variables === r.id

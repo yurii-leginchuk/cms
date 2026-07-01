@@ -139,6 +139,14 @@ export class Page {
   @Column({ type: 'timestamp', nullable: true })
   lastScrapedAt: Date | null;
 
+  /**
+   * Sitemap tombstone: set when a parse no longer finds this URL in the site's
+   * sitemap (cleared when it reappears). The row is kept — history/metrics stay
+   * — but quota-bounded work (index inspection rotation) skips tombstoned pages.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  missingFromSitemapAt: Date | null;
+
   @Column({ type: 'real', array: true, nullable: true, select: false })
   embedding: number[] | null;
 

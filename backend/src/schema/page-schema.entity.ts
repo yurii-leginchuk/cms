@@ -78,6 +78,15 @@ export class PageSchema {
   @Column({ type: 'timestamp', nullable: true })
   lastPublishedAt: Date | null;
 
+  /**
+   * The JSON-LD as it currently lives on WordPress (set on publish/adopt, null
+   * when the row was never live). Lets a targeted publish (e.g. accepting ONE
+   * gated change) push other pending rows at their live baseline instead of
+   * leaking their unapproved drafts onto the page.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  publishedJsonld: unknown | null;
+
   /** Error from the most recent failed publish attempt. */
   @Column({ type: 'text', nullable: true })
   publishError: string | null;

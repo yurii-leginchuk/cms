@@ -288,17 +288,22 @@ export class McpChangeService {
     switch (req.action) {
       case 'meta.update': {
         // Apply to the module (enqueues a sync job) then publish immediately.
+        // AWAITED: accept must reflect the real WP outcome — a failed push
+        // throws, so the change stays pending with the error visible.
         await this.pagesService.updateMeta(req.targetId, p);
-        await this.syncService.triggerPageSync(req.siteId, req.targetId);
+        await this.syncService.pushPageNow(req.siteId, req.targetId);
         return;
       }
+      // Schema changes publish TARGETED (publishSingle): only the accepted row
+      // goes live; the page's other pending rows stay pending at their live
+      // baseline instead of being swept onto the page by a full publish.
       case 'schema.add': {
-        await this.schemaService.createManaged(req.siteId, req.targetId, {
+        const row = await this.schemaService.createManaged(req.siteId, req.targetId, {
           type: p.type,
           jsonld: p.jsonld,
           ...(p.source ? { source: p.source } : {}),
         });
-        await this.schemaSyncService.publish(req.siteId, req.targetId);
+        await this.schemaSyncService.publishSingle(req.siteId, req.targetId, row.id);
         return;
       }
       case 'schema.update': {
@@ -306,12 +311,18 @@ export class McpChangeService {
           ...(p.type !== undefined ? { type: p.type } : {}),
           ...(p.jsonld !== undefined ? { jsonld: p.jsonld } : {}),
         });
-        await this.schemaSyncService.publish(req.siteId, req.targetId);
+        await this.schemaSyncService.publishSingle(req.siteId, req.targetId, p.schemaId);
         return;
       }
       case 'schema.delete': {
         await this.schemaService.removeManaged(p.schemaId);
-        await this.schemaSyncService.publish(req.siteId, req.targetId);
+        // removeManaged hard-deletes a row that never existed on WP — then
+        // there is nothing to push. A soft-removed row needs the targeted
+        // publish to actually drop it from the live page.
+        const still = await this.schemaRepo.findOne({ where: { id: p.schemaId } });
+        if (still) {
+          await this.schemaSyncService.publishSingle(req.siteId, req.targetId, p.schemaId);
+        }
         return;
       }
       case 'alt.set': {

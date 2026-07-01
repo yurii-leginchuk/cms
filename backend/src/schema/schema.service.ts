@@ -117,12 +117,19 @@ export class SchemaService {
   ): Promise<number> {
     const existing = await this.managedRepo.find({
       where: { pageId },
-      select: ['id', 'jsonld', 'status'],
+      select: ['id', 'jsonld', 'status', 'publishedJsonld'],
     });
     // Dedup/self-heal by content ignoring @context, so a re-detect upgrades old
     // rows (e.g. adds a now-propagated @context) instead of creating duplicates.
+    // Rows are matched by BOTH their draft content and their live-published
+    // content: a pending edit means the live page still serves the old version,
+    // and matching only the draft would re-import that old version as a
+    // duplicate row on every detect.
     const byKey = new Map<string, (typeof existing)[number]>();
-    for (const e of existing) byKey.set(contentKey(e.jsonld), e);
+    for (const e of existing) {
+      byKey.set(contentKey(e.jsonld), e);
+      if (e.publishedJsonld != null) byKey.set(contentKey(e.publishedJsonld), e);
+    }
 
     let added = 0;
     for (const s of result.schemas) {
@@ -139,6 +146,7 @@ export class SchemaService {
           await this.managedRepo.update(match.id, {
             jsonld: s.json,
             type: s.type,
+            publishedJsonld: s.json,
             validationStatus: v.ok ? v.validity : 'errors',
             validationResult: v.nodes.flatMap((n) => n.issues),
           });
@@ -152,6 +160,8 @@ export class SchemaService {
           pageId,
           type: s.type,
           jsonld: s.json,
+          // Adopted from the LIVE page → this content is what's on WP right now.
+          publishedJsonld: s.json,
           source: PageSchemaSource.IMPORTED,
           status: PageSchemaStatus.SYNCED,
           validationStatus: v.ok ? v.validity : 'errors',
@@ -463,14 +473,19 @@ export class SchemaService {
 
   /**
    * Delete a managed schema. Soft-delete (status `removed`) so Apply knows to
-   * remove it from the live page; a never-applied (`modified`) row is hard-deleted
-   * outright since it was never pushed to WordPress.
+   * remove it from the live page. Hard-delete ONLY a row that provably never
+   * existed on WordPress: never published by us (`lastPublishedAt` null) AND not
+   * adopted from the live page (`imported`). Status alone is NOT a safe signal —
+   * editing a previously-published row also marks it `modified`, and hard-deleting
+   * that would silently leave the schema live on WP with nothing pending.
    */
   async removeManaged(schemaId: string): Promise<void> {
     const row = await this.managedRepo.findOne({ where: { id: schemaId } });
     if (!row) throw new NotFoundException('Managed schema not found');
 
-    if (row.status === PageSchemaStatus.MODIFIED) {
+    const neverOnWp =
+      row.lastPublishedAt == null && row.source !== PageSchemaSource.IMPORTED;
+    if (neverOnWp) {
       await this.managedRepo.delete(schemaId);
       return;
     }

@@ -15,6 +15,7 @@ import {
   NormalizedRedirect,
   computeWholeSetHash,
   normalizeRedirect,
+  projectionKey,
 } from './redirect-normalize';
 
 /**
@@ -101,7 +102,7 @@ export class RedirectSyncService {
       run.redirectsFetched = normalized.length;
       run.groupsFetched = fetch.groups.length;
 
-      const wholeSetHash = computeWholeSetHash(normalized.map((n) => n.fingerprint));
+      const wholeSetHash = computeWholeSetHash(normalized.map((n) => projectionKey(n)));
       run.wholeSetHash = wholeSetHash;
 
       // Short-circuit: identical to the last SUCCESSFUL run ⇒ nothing changed.
