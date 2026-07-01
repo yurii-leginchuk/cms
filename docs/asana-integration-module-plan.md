@@ -24,6 +24,12 @@ It mirrors the conventions of the existing **Image Optimization** module
 > monitoring page shows only them. Consequently the monitoring view is empty
 > until the CMS starts creating tasks (Phase 2). The site→project mapping still
 > matters: it's the project the CMS creates its tasks **into**.
+>
+> **Escape hatch (built):** a task created OUTSIDE the CMS can be adopted for
+> tracking by **pasting its Asana URL** (or GID) — `POST …/tasks/track`. It must
+> belong to the mapped project; it lands with origin `tracked` and is refreshed
+> by "Sync now" like any tracked task. This is the ONLY way an external task
+> enters the mirror — still explicit, still not a bulk project import.
 
 ### Goal
 Let the team create and manage Asana tasks from inside the CMS (and from Claude
