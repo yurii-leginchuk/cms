@@ -51,6 +51,16 @@ export class Site {
   @Column({ type: 'boolean', default: false })
   hostedOnWpEngine: boolean;
 
+  /** GA4 property matched to this site's domain, persisted after first discovery so reports don't re-walk the Admin API. */
+  @Column({ length: 32, nullable: true })
+  ga4PropertyId: string | null;
+
+  @Column({ length: 255, nullable: true })
+  ga4PropertyName: string | null;
+
+  @Column({ length: 500, nullable: true })
+  ga4StreamUri: string | null;
+
   @Column({ type: 'enum', enum: SiteStatus, default: SiteStatus.IDLE })
   status: SiteStatus;
 

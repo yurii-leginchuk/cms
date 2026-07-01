@@ -32,16 +32,31 @@ export function Ga4OutcomesCard({
   prevFrom: string
   prevTo: string
 }) {
-  const { data: status, isLoading: statusLoading } = useGa4Status(siteId)
+  const { data: status, isLoading: statusLoading, isError: statusError, refetch: refetchStatus } = useGa4Status(siteId)
   const connected = status?.connected === true
   const cur = useGa4Summary(siteId, from, to, connected)
   const prev = useGa4Summary(siteId, prevFrom, prevTo, connected)
   const series = useGa4Series(siteId, from, to, connected)
 
   if (statusLoading) return <Skeleton className="h-24 w-full bg-white/5 rounded-xl" />
+  if (statusError) {
+    // Transient (GA4 API quota/timeout) — retries exhausted; explicitly retryable, never "not connected".
+    return (
+      <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] px-4 py-3 flex items-center gap-2 text-[12px] text-[#e8eaed]">
+        <AlertTriangle className="size-4 text-amber-400 flex-shrink-0" />
+        <span className="flex-1">GA4 data is temporarily unavailable (Google API didn't respond) — this is not a setup problem.</span>
+        <button
+          onClick={() => refetchStatus()}
+          className="text-[11px] px-2 py-1 rounded-md border border-amber-400/30 text-amber-300 hover:bg-amber-400/10"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
   if (!connected) {
     // Silent when simply not set up; a gentle hint only on access problems.
-    if (status?.reason === 'access_denied' || status?.reason === 'error') {
+    if (status?.reason === 'access_denied') {
       return (
         <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] px-4 py-3 flex items-start gap-2 text-[12px] text-[#e8eaed]">
           <AlertTriangle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
