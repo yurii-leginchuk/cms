@@ -32,6 +32,7 @@ import { AsanaModule } from './asana/asana.module';
 import { Ga4Module } from './ga4/ga4.module';
 import { CacheModule } from './cache/cache.module';
 import { RedirectModule } from './redirect/redirect.module';
+import { AuditModule } from './audit/audit.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
@@ -73,6 +74,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     Ga4Module,
     CacheModule,
     RedirectModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ApiKeyGuard }],
